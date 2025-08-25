@@ -405,8 +405,9 @@ def second_page():
                 cached_data = load_cache(filename)
                 
                 # If refresh requested or no cache exists, fetch from API
-                if refresh_requested or not cached_data:
-                    if refresh_requested and cached_data:
+                should_refresh = refresh_requested or concurrent_refresh
+                if should_refresh or not cached_data:
+                    if should_refresh and cached_data:
                         clear_cache(filename)
                     
                     fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'backup')
@@ -425,7 +426,8 @@ def second_page():
                     total_cached += len(cached_data)
             
             # Set status message for sequential processing
-            if refresh_requested:
+            should_refresh = refresh_requested or concurrent_refresh
+            if should_refresh:
                 if errors:
                     status_message = f"Refresh completed with errors. Fetched {total_fetched} clusters, used {total_cached} cached clusters. Errors: {'; '.join(errors)}"
                     status_type = "warning"
@@ -546,9 +548,9 @@ def monitoring_page():
                 cached_data = load_cache(filename)
                 
                 # If refresh requested or no cache exists, fetch from API
-                force_refresh = refresh_requested or concurrent_refresh
-                if force_refresh or not cached_data:
-                    if force_refresh and cached_data:
+                should_refresh = refresh_requested or concurrent_refresh
+                if should_refresh or not cached_data:
+                    if should_refresh and cached_data:
                         clear_cache(filename)
                     
                     fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'monitoring')
@@ -567,8 +569,8 @@ def monitoring_page():
                     total_cached += len(cached_data)
         
             # Set status message for sequential processing
-            force_refresh = refresh_requested or concurrent_refresh
-            if force_refresh:
+            should_refresh = refresh_requested or concurrent_refresh
+            if should_refresh:
                 if errors:
                     status_message = f"Refresh completed with errors. Fetched {total_fetched} hosts, used {total_cached} cached hosts. Errors: {'; '.join(errors)}"
                     status_type = "warning"
