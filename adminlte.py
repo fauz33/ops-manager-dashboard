@@ -158,6 +158,7 @@ def fetch_multiple_ops_managers_concurrent(ops_managers_list, data_type='backup'
             
             # If refresh requested or no cache exists, fetch from API
             if refresh_requested or not cached_data:
+                print(f"DEBUG: Fetching from API for {ops_manager.get('url', 'unknown')} (refresh_requested={refresh_requested}, has_cache={bool(cached_data)})")
                 if refresh_requested and cached_data:
                     clear_cache(filename)
                 
@@ -187,6 +188,7 @@ def fetch_multiple_ops_managers_concurrent(ops_managers_list, data_type='backup'
                     }
             else:
                 # Use existing cache
+                print(f"DEBUG: Using cached data for {ops_manager.get('url', 'unknown')} ({len(cached_data)} records)")
                 return {
                     'data': cached_data,
                     'fetched': 0,
@@ -385,8 +387,11 @@ def second_page():
         
         if use_concurrent:
             print(f"DEBUG: ENTERING concurrent processing for {len(matching_ops_managers)} ops managers")
+            # If concurrent_refresh is True, it means user clicked refresh button, so force refresh
+            force_refresh = refresh_requested or concurrent_refresh
+            print(f"DEBUG: Force refresh = {force_refresh} (refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh})")
             all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'backup', max_workers=4, refresh_requested=refresh_requested
+                matching_ops_managers, 'backup', max_workers=4, refresh_requested=force_refresh
             )
             print(f"DEBUG: COMPLETED concurrent processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
         else:
@@ -510,8 +515,10 @@ def monitoring_page():
         
         if use_concurrent:
             print(f"DEBUG: Using concurrent monitoring processing for {len(matching_ops_managers)} ops managers (concurrent_refresh={concurrent_refresh}, missing_cache={missing_cache_count})")
+            # If concurrent_refresh is True, it means user clicked refresh button, so force refresh
+            force_refresh = refresh_requested or concurrent_refresh
             all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=refresh_requested
+                matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=force_refresh
             )
         else:
             # Handle data loading for each matching ops manager (sequential)
