@@ -387,11 +387,8 @@ def second_page():
         
         if use_concurrent:
             print(f"DEBUG: ENTERING concurrent processing for {len(matching_ops_managers)} ops managers")
-            # If concurrent_refresh is True, it means user clicked refresh button, so force refresh
-            force_refresh = refresh_requested or concurrent_refresh
-            print(f"DEBUG: Force refresh = {force_refresh} (refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh})")
             all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'backup', max_workers=4, refresh_requested=force_refresh
+                matching_ops_managers, 'backup', max_workers=4, refresh_requested=True
             )
             print(f"DEBUG: COMPLETED concurrent processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
         else:
@@ -405,9 +402,8 @@ def second_page():
                 cached_data = load_cache(filename)
                 
                 # If refresh requested or no cache exists, fetch from API
-                should_refresh = refresh_requested or concurrent_refresh
-                if should_refresh or not cached_data:
-                    if should_refresh and cached_data:
+                if refresh_requested or not cached_data:
+                    if refresh_requested and cached_data:
                         clear_cache(filename)
                     
                     fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'backup')
@@ -426,8 +422,7 @@ def second_page():
                     total_cached += len(cached_data)
             
             # Set status message for sequential processing
-            should_refresh = refresh_requested or concurrent_refresh
-            if should_refresh:
+            if refresh_requested:
                 if errors:
                     status_message = f"Refresh completed with errors. Fetched {total_fetched} clusters, used {total_cached} cached clusters. Errors: {'; '.join(errors)}"
                     status_type = "warning"
@@ -530,11 +525,8 @@ def monitoring_page():
         
         if use_concurrent:
             print(f"DEBUG: ENTERING concurrent monitoring processing for {len(matching_ops_managers)} ops managers")
-            # If concurrent_refresh is True, it means user clicked refresh button, so force refresh
-            force_refresh = refresh_requested or concurrent_refresh
-            print(f"DEBUG: Force refresh = {force_refresh} (refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh})")
             all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=force_refresh
+                matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=True
             )
             print(f"DEBUG: COMPLETED concurrent monitoring processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
         else:
@@ -548,9 +540,8 @@ def monitoring_page():
                 cached_data = load_cache(filename)
                 
                 # If refresh requested or no cache exists, fetch from API
-                should_refresh = refresh_requested or concurrent_refresh
-                if should_refresh or not cached_data:
-                    if should_refresh and cached_data:
+                if refresh_requested or not cached_data:
+                    if refresh_requested and cached_data:
                         clear_cache(filename)
                     
                     fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'monitoring')
@@ -569,8 +560,7 @@ def monitoring_page():
                     total_cached += len(cached_data)
         
             # Set status message for sequential processing
-            should_refresh = refresh_requested or concurrent_refresh
-            if should_refresh:
+            if refresh_requested:
                 if errors:
                     status_message = f"Refresh completed with errors. Fetched {total_fetched} hosts, used {total_cached} cached hosts. Errors: {'; '.join(errors)}"
                     status_type = "warning"
