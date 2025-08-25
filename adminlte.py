@@ -338,7 +338,6 @@ def second_page():
     selected_regions = []
     selected_environments = []
     refresh_requested = False
-    concurrent_refresh = False
     status_message = ""
     status_type = ""
     
@@ -348,17 +347,10 @@ def second_page():
         selected_regions = request.form.getlist('regions')
         selected_environments = request.form.getlist('environments')
         refresh_requested = 'refresh_data' in request.form
-        concurrent_refresh = 'concurrent_refresh' in request.form
-        test_submit = 'test_submit' in request.form
-        print(f"DEBUG: refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh}, test_submit={test_submit}")
+        print(f"DEBUG: refresh_requested={refresh_requested}")
         
-        if test_submit:
-            print("DEBUG: Test submit button was clicked!")
-            status_message = "Test submit button clicked successfully! Form submission is working."
-            status_type = "info"
-        
-        if concurrent_refresh and not (selected_regions or selected_environments):
-            print("DEBUG: concurrent_refresh=True but no regions/environments selected!")
+        if refresh_requested and not (selected_regions or selected_environments):
+            print("DEBUG: refresh_requested=True but no regions/environments selected!")
             status_message = "Please select regions or environments before refreshing data."
             status_type = "warning"
     
@@ -370,68 +362,46 @@ def second_page():
             if region_match and env_match:
                 matching_ops_managers.append(ops_manager)
         
-        # Check if any cache files are missing to determine if we should use concurrent processing
-        missing_cache_count = 0
-        missing_ops_managers = []
+        # Handle data loading for each matching ops manager (simple sequential processing)
+        total_fetched = 0
+        total_cached = 0
+        errors = []
+        
         for ops_manager in matching_ops_managers:
             filename = get_cache_filename(ops_manager['url'], 'backup')
             cached_data = load_cache(filename)
-            if not cached_data:
-                missing_cache_count += 1
-                missing_ops_managers.append(f"{ops_manager['region']}-{ops_manager['environment']}")
-        
-        # Use concurrent processing if explicitly requested OR if multiple cache files are missing
-        use_concurrent = concurrent_refresh or (missing_cache_count >= 2)
-        
-        print(f"DEBUG: Concurrent decision - use_concurrent={use_concurrent}, concurrent_refresh={concurrent_refresh}, missing_cache={missing_cache_count}")
-        
-        if use_concurrent:
-            print(f"DEBUG: ENTERING concurrent processing for {len(matching_ops_managers)} ops managers")
-            all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'backup', max_workers=4, refresh_requested=True
-            )
-            print(f"DEBUG: COMPLETED concurrent processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
-        else:
-            # Handle data loading for each matching ops manager (sequential)
-            total_fetched = 0
-            total_cached = 0
-            errors = []
             
-            for ops_manager in matching_ops_managers:
-                filename = get_cache_filename(ops_manager['url'], 'backup')
-                cached_data = load_cache(filename)
+            # If refresh requested or no cache exists, fetch from API
+            if refresh_requested or not cached_data:
+                if refresh_requested and cached_data:
+                    clear_cache(filename)
                 
-                # If refresh requested or no cache exists, fetch from API
-                if refresh_requested or not cached_data:
-                    if refresh_requested and cached_data:
-                        clear_cache(filename)
-                    
-                    fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'backup')
-                    if error_msg:
-                        errors.append(f"{ops_manager['region']}-{ops_manager['environment']}: {error_msg}")
-                        # Try to use existing cache if refresh failed
-                        if cached_data:
-                            all_data.extend(cached_data)
-                            total_cached += len(cached_data)
-                    else:
-                        all_data.extend(fresh_data)
-                        total_fetched += len(fresh_data)
+                fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'backup')
+                if error_msg:
+                    errors.append(f"{ops_manager['region']}-{ops_manager['environment']}: {error_msg}")
+                    # Try to use existing cache if refresh failed
+                    if cached_data:
+                        all_data.extend(cached_data)
+                        total_cached += len(cached_data)
                 else:
-                    # Use existing cache
-                    all_data.extend(cached_data)
-                    total_cached += len(cached_data)
-            
-            # Set status message for sequential processing
-            if refresh_requested:
-                if errors:
-                    status_message = f"Refresh completed with errors. Fetched {total_fetched} clusters, used {total_cached} cached clusters. Errors: {'; '.join(errors)}"
-                    status_type = "warning"
-                else:
-                    status_message = f"Data refreshed successfully! Fetched {total_fetched} clusters from API."
-                    status_type = "success"
-            elif total_fetched > 0:
-                status_message = f"Data retrieval completed! Fetched {total_fetched} clusters from API (cache was missing)."
+                    all_data.extend(fresh_data)
+                    total_fetched += len(fresh_data)
+            else:
+                # Use existing cache
+                all_data.extend(cached_data)
+                total_cached += len(cached_data)
+        
+        # Set status message
+        if refresh_requested:
+            if errors:
+                status_message = f"Refresh completed with errors. Fetched {total_fetched} clusters, used {total_cached} cached clusters. Errors: {'; '.join(errors)}"
+                status_type = "warning"
+            else:
+                status_message = f"Data refreshed successfully! Fetched {total_fetched} clusters from API."
                 status_type = "success"
+        elif total_fetched > 0:
+            status_message = f"Data retrieval completed! Fetched {total_fetched} clusters from API (cache was missing)."
+            status_type = "success"
     
     # Extract unique usernames and backup statuses from the filtered data
     unique_usernames = set()
@@ -476,7 +446,6 @@ def monitoring_page():
     selected_regions = []
     selected_environments = []
     refresh_requested = False
-    concurrent_refresh = False
     status_message = ""
     status_type = ""
     
@@ -486,17 +455,10 @@ def monitoring_page():
         selected_regions = request.form.getlist('regions')
         selected_environments = request.form.getlist('environments')
         refresh_requested = 'refresh_data' in request.form
-        concurrent_refresh = 'concurrent_refresh' in request.form
-        test_submit = 'test_submit' in request.form
-        print(f"DEBUG: refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh}, test_submit={test_submit}")
+        print(f"DEBUG: refresh_requested={refresh_requested}")
         
-        if test_submit:
-            print("DEBUG: Test submit button was clicked!")
-            status_message = "Test submit button clicked successfully! Form submission is working."
-            status_type = "info"
-        
-        if concurrent_refresh and not (selected_regions or selected_environments):
-            print("DEBUG: concurrent_refresh=True but no regions/environments selected!")
+        if refresh_requested and not (selected_regions or selected_environments):
+            print("DEBUG: refresh_requested=True but no regions/environments selected!")
             status_message = "Please select regions or environments before refreshing data."
             status_type = "warning"
     
@@ -508,68 +470,46 @@ def monitoring_page():
             if region_match and env_match:
                 matching_ops_managers.append(ops_manager)
         
-        # Check if any cache files are missing to determine if we should use concurrent processing
-        missing_cache_count = 0
-        missing_ops_managers = []
+        # Handle data loading for each matching ops manager (simple sequential processing)
+        total_fetched = 0
+        total_cached = 0
+        errors = []
+        
         for ops_manager in matching_ops_managers:
             filename = get_cache_filename(ops_manager['url'], 'monitoring')
             cached_data = load_cache(filename)
-            if not cached_data:
-                missing_cache_count += 1
-                missing_ops_managers.append(f"{ops_manager['region']}-{ops_manager['environment']}")
-        
-        # Use concurrent processing if explicitly requested OR if multiple cache files are missing
-        use_concurrent = concurrent_refresh or (missing_cache_count >= 2)
-        
-        print(f"DEBUG: Concurrent decision - use_concurrent={use_concurrent}, concurrent_refresh={concurrent_refresh}, missing_cache={missing_cache_count}")
-        
-        if use_concurrent:
-            print(f"DEBUG: ENTERING concurrent monitoring processing for {len(matching_ops_managers)} ops managers")
-            all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
-                matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=True
-            )
-            print(f"DEBUG: COMPLETED concurrent monitoring processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
-        else:
-            # Handle data loading for each matching ops manager (sequential)
-            total_fetched = 0
-            total_cached = 0
-            errors = []
             
-            for ops_manager in matching_ops_managers:
-                filename = get_cache_filename(ops_manager['url'], 'monitoring')
-                cached_data = load_cache(filename)
+            # If refresh requested or no cache exists, fetch from API
+            if refresh_requested or not cached_data:
+                if refresh_requested and cached_data:
+                    clear_cache(filename)
                 
-                # If refresh requested or no cache exists, fetch from API
-                if refresh_requested or not cached_data:
-                    if refresh_requested and cached_data:
-                        clear_cache(filename)
-                    
-                    fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'monitoring')
-                    if error_msg:
-                        errors.append(f"{ops_manager['region']}-{ops_manager['environment']}: {error_msg}")
-                        # Try to use existing cache if refresh failed
-                        if cached_data:
-                            all_data.extend(cached_data)
-                            total_cached += len(cached_data)
-                    else:
-                        all_data.extend(fresh_data)
-                        total_fetched += len(fresh_data)
+                fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'monitoring')
+                if error_msg:
+                    errors.append(f"{ops_manager['region']}-{ops_manager['environment']}: {error_msg}")
+                    # Try to use existing cache if refresh failed
+                    if cached_data:
+                        all_data.extend(cached_data)
+                        total_cached += len(cached_data)
                 else:
-                    # Use existing cache
-                    all_data.extend(cached_data)
-                    total_cached += len(cached_data)
+                    all_data.extend(fresh_data)
+                    total_fetched += len(fresh_data)
+            else:
+                # Use existing cache
+                all_data.extend(cached_data)
+                total_cached += len(cached_data)
         
-            # Set status message for sequential processing
-            if refresh_requested:
-                if errors:
-                    status_message = f"Refresh completed with errors. Fetched {total_fetched} hosts, used {total_cached} cached hosts. Errors: {'; '.join(errors)}"
-                    status_type = "warning"
-                else:
-                    status_message = f"Data refreshed successfully! Fetched {total_fetched} hosts from API."
-                    status_type = "success"
-            elif total_fetched > 0:
-                status_message = f"Data retrieval completed! Fetched {total_fetched} hosts from API (cache was missing)."
+        # Set status message
+        if refresh_requested:
+            if errors:
+                status_message = f"Refresh completed with errors. Fetched {total_fetched} hosts, used {total_cached} cached hosts. Errors: {'; '.join(errors)}"
+                status_type = "warning"
+            else:
+                status_message = f"Data refreshed successfully! Fetched {total_fetched} hosts from API."
                 status_type = "success"
+        elif total_fetched > 0:
+            status_message = f"Data retrieval completed! Fetched {total_fetched} hosts from API (cache was missing)."
+            status_type = "success"
     
     # Extract unique usernames from the filtered data
     unique_usernames = set()
