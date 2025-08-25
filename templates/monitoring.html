@@ -63,6 +63,23 @@
       border: none !important;
       box-shadow: none !important;
     }
+    
+    /* Loading button styles */
+    .btn-loading {
+      position: relative;
+      color: transparent !important;
+    }
+    
+    .btn-loading:disabled {
+      cursor: wait !important;
+    }
+    
+    /* Improve spinner visibility */
+    .spinner-border-sm {
+      width: 1rem;
+      height: 1rem;
+      border-width: 0.15em;
+    }
     .nav-link:hover {
       background-color: rgba(255,255,255,0.1) !important;
       color: #ffffff !important;
@@ -475,15 +492,37 @@
 
     // Show loading spinner when refresh button is clicked
     function showLoadingSpinner(button) {
-      const originalContent = button.innerHTML;
-      button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
-      button.disabled = true;
+      console.log('DEBUG: showLoadingSpinner called');
       
-      // Store original content to restore it if needed
+      // Immediately show spinner and disable button
+      const originalContent = button.innerHTML;
+      const originalClasses = button.className;
+      
+      // Store original state
       button.setAttribute('data-original-content', originalContent);
+      button.setAttribute('data-original-classes', originalClasses);
+      
+      // Show spinner immediately
+      button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Refreshing...';
+      button.disabled = true;
+      button.className = button.className.replace('btn-primary', 'btn-secondary');
       
       // Allow form submission to proceed
       return true;
+    }
+    
+    // Function to restore button state (in case of errors)
+    function restoreButton(button) {
+      const originalContent = button.getAttribute('data-original-content');
+      const originalClasses = button.getAttribute('data-original-classes');
+      
+      if (originalContent) {
+        button.innerHTML = originalContent;
+        button.disabled = false;
+        if (originalClasses) {
+          button.className = originalClasses;
+        }
+      }
     }
 
     // Update selected ops managers display

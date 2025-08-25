@@ -484,13 +484,24 @@ def monitoring_page():
     status_type = ""
     
     if request.method == 'POST':
-        print(f"DEBUG: POST request received for backup route")
+        print(f"DEBUG: POST request received for monitoring route")
         print(f"DEBUG: Form data: {dict(request.form)}")
         selected_regions = request.form.getlist('regions')
         selected_environments = request.form.getlist('environments')
         refresh_requested = 'refresh_data' in request.form
         concurrent_refresh = 'concurrent_refresh' in request.form
-        print(f"DEBUG: refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh}")
+        test_submit = 'test_submit' in request.form
+        print(f"DEBUG: refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh}, test_submit={test_submit}")
+        
+        if test_submit:
+            print("DEBUG: Test submit button was clicked!")
+            status_message = "Test submit button clicked successfully! Form submission is working."
+            status_type = "info"
+        
+        if concurrent_refresh and not (selected_regions or selected_environments):
+            print("DEBUG: concurrent_refresh=True but no regions/environments selected!")
+            status_message = "Please select regions or environments before refreshing data."
+            status_type = "warning"
     
     if selected_regions or selected_environments:
         matching_ops_managers = []
@@ -513,13 +524,17 @@ def monitoring_page():
         # Use concurrent processing if explicitly requested OR if multiple cache files are missing
         use_concurrent = concurrent_refresh or (missing_cache_count >= 2)
         
+        print(f"DEBUG: Concurrent decision - use_concurrent={use_concurrent}, concurrent_refresh={concurrent_refresh}, missing_cache={missing_cache_count}")
+        
         if use_concurrent:
-            print(f"DEBUG: Using concurrent monitoring processing for {len(matching_ops_managers)} ops managers (concurrent_refresh={concurrent_refresh}, missing_cache={missing_cache_count})")
+            print(f"DEBUG: ENTERING concurrent monitoring processing for {len(matching_ops_managers)} ops managers")
             # If concurrent_refresh is True, it means user clicked refresh button, so force refresh
             force_refresh = refresh_requested or concurrent_refresh
+            print(f"DEBUG: Force refresh = {force_refresh} (refresh_requested={refresh_requested}, concurrent_refresh={concurrent_refresh})")
             all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
                 matching_ops_managers, 'monitoring', max_workers=4, refresh_requested=force_refresh
             )
+            print(f"DEBUG: COMPLETED concurrent monitoring processing - fetched={total_fetched}, cached={total_cached}, total_data={len(all_data)}, status='{status_message}'")
         else:
             # Handle data loading for each matching ops manager (sequential)
             total_fetched = 0
@@ -531,8 +546,9 @@ def monitoring_page():
                 cached_data = load_cache(filename)
                 
                 # If refresh requested or no cache exists, fetch from API
-                if refresh_requested or not cached_data:
-                    if refresh_requested and cached_data:
+                force_refresh = refresh_requested or concurrent_refresh
+                if force_refresh or not cached_data:
+                    if force_refresh and cached_data:
                         clear_cache(filename)
                     
                     fresh_data, error_msg = fetch_and_cache_data(ops_manager, 'monitoring')
@@ -551,7 +567,8 @@ def monitoring_page():
                     total_cached += len(cached_data)
         
             # Set status message for sequential processing
-            if refresh_requested:
+            force_refresh = refresh_requested or concurrent_refresh
+            if force_refresh:
                 if errors:
                     status_message = f"Refresh completed with errors. Fetched {total_fetched} hosts, used {total_cached} cached hosts. Errors: {'; '.join(errors)}"
                     status_type = "warning"
@@ -573,6 +590,8 @@ def monitoring_page():
                 unique_usernames.add(username)
             else:
                 unique_usernames.add('NONE')
+    
+    print(f"DEBUG: Rendering monitoring.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
     
     return render_template('monitoring.html', 
                          unique_region=unique_region, 

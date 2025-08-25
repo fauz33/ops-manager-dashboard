@@ -63,6 +63,23 @@
       border: none !important;
       box-shadow: none !important;
     }
+    
+    /* Loading button styles */
+    .btn-loading {
+      position: relative;
+      color: transparent !important;
+    }
+    
+    .btn-loading:disabled {
+      cursor: wait !important;
+    }
+    
+    /* Improve spinner visibility */
+    .spinner-border-sm {
+      width: 1rem;
+      height: 1rem;
+      border-width: 0.15em;
+    }
     .nav-link:hover {
       background-color: rgba(255,255,255,0.1) !important;
       color: #ffffff !important;
@@ -327,23 +344,12 @@
                         
                         <!-- Refresh Button -->
                         {% if selected_regions or selected_environments %}
-                        <div class="d-grid gap-2 mt-3">
+                        <div class="d-grid mt-3">
                           <button type="submit" name="concurrent_refresh" value="1" class="btn btn-primary" onclick="return showLoadingSpinner(this);">
                             <i class="bi bi-lightning-charge"></i> Refresh Data
                           </button>
-                          <!-- Debug button without JavaScript -->
-                          <button type="submit" name="concurrent_refresh" value="1" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-bug"></i> Debug Refresh (No JS)
-                          </button>
                         </div>
                         {% endif %}
-                        
-                        <!-- Always visible test button -->
-                        <div class="d-grid mt-2">
-                          <button type="submit" name="test_submit" value="1" class="btn btn-warning btn-sm">
-                            <i class="bi bi-gear"></i> Test Submit (Always Visible)
-                          </button>
-                        </div>
                       </fieldset>
 
                       <!-- Table Filters -->
@@ -509,13 +515,18 @@
     function showLoadingSpinner(button) {
       console.log('DEBUG: showLoadingSpinner called');
       
-      // Use setTimeout to allow form submission to proceed first
-      setTimeout(function() {
-        const originalContent = button.innerHTML;
-        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
-        button.disabled = true;
-        button.setAttribute('data-original-content', originalContent);
-      }, 10);
+      // Immediately show spinner and disable button
+      const originalContent = button.innerHTML;
+      const originalClasses = button.className;
+      
+      // Store original state
+      button.setAttribute('data-original-content', originalContent);
+      button.setAttribute('data-original-classes', originalClasses);
+      
+      // Show spinner immediately
+      button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Refreshing...';
+      button.disabled = true;
+      button.className = button.className.replace('btn-primary', 'btn-secondary');
       
       // Debug form submission
       const form = button.closest('form');
@@ -527,8 +538,22 @@
         console.log('DEBUG: No form found!');
       }
       
-      // Allow form submission to proceed immediately
+      // Allow form submission to proceed
       return true;
+    }
+    
+    // Function to restore button state (in case of errors)
+    function restoreButton(button) {
+      const originalContent = button.getAttribute('data-original-content');
+      const originalClasses = button.getAttribute('data-original-classes');
+      
+      if (originalContent) {
+        button.innerHTML = originalContent;
+        button.disabled = false;
+        if (originalClasses) {
+          button.className = originalClasses;
+        }
+      }
     }
 
     // Update selected ops managers display
