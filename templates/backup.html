@@ -513,11 +513,13 @@
 
     // Update selected ops managers display
     function updateSelectedOpsManagers() {
+      console.log('DEBUG: updateSelectedOpsManagers called');
       const regionCheckboxes = document.querySelectorAll('input[name="regions"]:checked');
       const environmentCheckboxes = document.querySelectorAll('input[name="environments"]:checked');
       
       const selectedRegions = Array.from(regionCheckboxes).map(cb => cb.value);
       const selectedEnvironments = Array.from(environmentCheckboxes).map(cb => cb.value);
+      console.log('DEBUG: Selected regions:', selectedRegions, 'Selected environments:', selectedEnvironments);
       
       const opsManagersContainer = document.getElementById('selected-ops-managers');
       const opsCardsContainer = document.getElementById('ops-manager-cards');
@@ -525,7 +527,9 @@
       
       // Hide if no selections
       if (selectedRegions.length === 0 && selectedEnvironments.length === 0) {
+        console.log('DEBUG: No selections, hiding ops managers container');
         opsManagersContainer.style.display = 'none';
+        opsCardsContainer.innerHTML = ''; // Clear any existing content
         return;
       }
       
@@ -586,9 +590,13 @@
         opsCardsContainer.appendChild(col);
       });
       
-      // Update count and show container
-      opsCountBadge.textContent = matchingOpsManagers.length;
-      opsManagersContainer.style.display = matchingOpsManagers.length > 0 ? 'block' : 'none';
+      // Update count and show/hide container
+      if (matchingOpsManagers.length > 0) {
+        opsCountBadge.textContent = matchingOpsManagers.length;
+        opsManagersContainer.style.display = 'block';
+      } else {
+        opsManagersContainer.style.display = 'none';
+      }
     }
     
     // Filter table based on username and backup status checkboxes

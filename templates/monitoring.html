@@ -539,7 +539,9 @@
       
       // Hide if no selections
       if (selectedRegions.length === 0 && selectedEnvironments.length === 0) {
+        console.log('DEBUG: No selections, hiding ops managers container');
         opsManagersContainer.style.display = 'none';
+        opsCardsContainer.innerHTML = ''; // Clear any existing content
         return;
       }
       
@@ -600,9 +602,13 @@
         opsCardsContainer.appendChild(col);
       });
       
-      // Update count and show container
-      opsCountBadge.textContent = matchingOpsManagers.length;
-      opsManagersContainer.style.display = matchingOpsManagers.length > 0 ? 'block' : 'none';
+      // Update count and show/hide container
+      if (matchingOpsManagers.length > 0) {
+        opsCountBadge.textContent = matchingOpsManagers.length;
+        opsManagersContainer.style.display = 'block';
+      } else {
+        opsManagersContainer.style.display = 'none';
+      }
     }
     
     // Filter table based on username checkboxes
