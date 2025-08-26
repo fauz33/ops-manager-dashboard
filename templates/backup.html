@@ -210,6 +210,23 @@
           </div>
           {% endif %}
 
+          <!-- Selected Ops Managers Display -->
+          <div id="selected-ops-managers" class="row mt-4" style="display: none;">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center mb-3">
+                    <i class="bi bi-server me-2 text-primary fs-5"></i>
+                    <h5 class="mb-0 fw-bold">Selected Ops Managers</h5>
+                    <span id="ops-count" class="badge bg-primary ms-2">0</span>
+                  </div>
+                  <div class="row" id="ops-manager-cards">
+                    <!-- Dynamic content will be inserted here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           
           <div class="row">
             <div class="col-md-9">
@@ -478,9 +495,101 @@
         filterTable();
       }
       
+      // Add event listeners for region/environment checkboxes
+      const regionCheckboxes = document.querySelectorAll('input[name="regions"]');
+      const environmentCheckboxes = document.querySelectorAll('input[name="environments"]');
+      
+      regionCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedOpsManagers);
+      });
+      
+      environmentCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedOpsManagers);
+      });
+      
+      // Initialize ops managers display
+      updateSelectedOpsManagers();
     });
 
-
+    // Update selected ops managers display
+    function updateSelectedOpsManagers() {
+      const regionCheckboxes = document.querySelectorAll('input[name="regions"]:checked');
+      const environmentCheckboxes = document.querySelectorAll('input[name="environments"]:checked');
+      
+      const selectedRegions = Array.from(regionCheckboxes).map(cb => cb.value);
+      const selectedEnvironments = Array.from(environmentCheckboxes).map(cb => cb.value);
+      
+      const opsManagersContainer = document.getElementById('selected-ops-managers');
+      const opsCardsContainer = document.getElementById('ops-manager-cards');
+      const opsCountBadge = document.getElementById('ops-count');
+      
+      // Hide if no selections
+      if (selectedRegions.length === 0 && selectedEnvironments.length === 0) {
+        opsManagersContainer.style.display = 'none';
+        return;
+      }
+      
+      // Get all ops managers from template data
+      const allOpsManagers = {{ list_opsmanager.ops_manager | tojson | safe }};
+      
+      // Safety check
+      if (!allOpsManagers || !Array.isArray(allOpsManagers)) {
+        console.error('allOpsManagers is not a valid array:', allOpsManagers);
+        opsManagersContainer.style.display = 'none';
+        return;
+      }
+      
+      // Filter matching ops managers
+      const matchingOpsManagers = allOpsManagers.filter(om => {
+        const regionMatch = selectedRegions.length === 0 || selectedRegions.includes(om.region);
+        const envMatch = selectedEnvironments.length === 0 || selectedEnvironments.includes(om.environment);
+        return regionMatch && envMatch;
+      });
+      
+      // Group ops managers by region and environment
+      const grouped = {};
+      matchingOpsManagers.forEach(om => {
+        const key = `${om.region}-${om.environment}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            region: om.region,
+            environment: om.environment,
+            opsManagers: []
+          };
+        }
+        grouped[key].opsManagers.push(om);
+      });
+      
+      // Update the display with grouped cards
+      opsCardsContainer.innerHTML = '';
+      Object.values(grouped).forEach(group => {
+        const col = document.createElement('div');
+        col.className = 'col-md-6 col-xl-4 mb-3';
+        
+        const urlsList = group.opsManagers.map(om => 
+          `<div class="mb-2"><code class="small text-break d-block">${om.url}</code></div>`
+        ).join('');
+        
+        col.innerHTML = `
+          <div class="card border-left-primary h-100">
+            <div class="card-body p-3">
+              <div class="d-flex align-items-center mb-3">
+                <span class="badge bg-secondary me-2">${group.region}</span>
+                <span class="badge bg-info me-2">${group.environment}</span>
+                <span class="badge bg-light text-dark">${group.opsManagers.length}</span>
+              </div>
+              <div class="small text-muted mb-2">Ops Manager URLs:</div>
+              <div>${urlsList}</div>
+            </div>
+          </div>
+        `;
+        opsCardsContainer.appendChild(col);
+      });
+      
+      // Update count and show container
+      opsCountBadge.textContent = matchingOpsManagers.length;
+      opsManagersContainer.style.display = matchingOpsManagers.length > 0 ? 'block' : 'none';
+    }
     
     // Filter table based on username and backup status checkboxes
     function filterTable() {
