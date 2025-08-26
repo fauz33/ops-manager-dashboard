@@ -235,6 +235,11 @@
                 <div class="card-header">
                   <h3 class="card-title">Monitoring Users</h3>
                   <div class="card-tools">
+                    {% if data and data|length > 0 %}
+                    <button type="button" class="btn btn-success btn-sm me-2" onclick="exportToCSV('monitoring')" title="Export to CSV">
+                      <i class="bi bi-download"></i> Export CSV
+                    </button>
+                    {% endif %}
                     <span class="badge {% if data and data|length > 0 %}bg-info{% else %}bg-secondary{% endif %}" id="totalRowCount">
                       {% if data %}{{ data|length }}{% else %}0{% endif %} hosts
                     </span>
@@ -609,6 +614,63 @@
       } else {
         opsManagersContainer.style.display = 'none';
       }
+    }
+
+    // Export table data to CSV
+    function exportToCSV(dataType) {
+      const table = document.querySelector('#clusters-table');
+      if (!table) {
+        alert('No table data available to export.');
+        return;
+      }
+      
+      const rows = table.querySelectorAll('tbody tr');
+      const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
+      
+      if (visibleRows.length === 0) {
+        alert('No visible data to export.');
+        return;
+      }
+      
+      // Get headers
+      const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
+      
+      // Create CSV content
+      let csvContent = '';
+      
+      // Add headers
+      csvContent += headers.map(header => `"${header.replace(/"/g, '""')}"`).join(',') + '\n';
+      
+      // Add data rows
+      visibleRows.forEach(row => {
+        const cells = Array.from(row.querySelectorAll('td')).map(td => {
+          let text = td.textContent.trim();
+          // Escape quotes and wrap in quotes
+          return `"${text.replace(/"/g, '""')}"`;
+        });
+        csvContent += cells.join(',') + '\n';
+      });
+      
+      // Create download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      // Generate filename with timestamp
+      const now = new Date();
+      const timestamp = now.getFullYear() + 
+        String(now.getMonth() + 1).padStart(2, '0') + 
+        String(now.getDate()).padStart(2, '0') + '_' +
+        String(now.getHours()).padStart(2, '0') + 
+        String(now.getMinutes()).padStart(2, '0');
+      
+      link.setAttribute('download', `mongodb_${dataType}_${timestamp}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
     
     // Filter table based on username checkboxes
