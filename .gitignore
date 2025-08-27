@@ -4,7 +4,6 @@ cache
 list-opsmanager-all.json
 *.ipynb
 proj_env
-static
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
