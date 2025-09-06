@@ -319,7 +319,7 @@ def index():
         cache_timestamp = get_cache_timestamp(filename)
 
     return render_template(
-        'main.html',
+        'main_material.html',
         options=ops_manager_options,
         data=data,
         selected_ops_manager=selected_ops_manager,
@@ -329,8 +329,8 @@ def index():
         cache_timestamp=cache_timestamp
     )
 
-@app.route('/second', methods=['GET', 'POST'])
-def second_page():
+@app.route('/backup', methods=['GET', 'POST'])
+def backup_page():
     unique_region = {record['region'] for record in list_opsmanager['ops_manager']}
     unique_env = {record['environment'] for record in list_opsmanager['ops_manager']}
     
@@ -420,9 +420,10 @@ def second_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} clusters from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames and backup statuses from the filtered data
+    # Extract unique usernames, backup statuses, and ops managers from the filtered data
     unique_usernames = set()
     unique_backup_statuses = set()
+    unique_opsmanagers = set()
     
     if all_data:
         for record in all_data:
@@ -439,10 +440,31 @@ def second_page():
                 unique_backup_statuses.add(backup_status)
             else:
                 unique_backup_statuses.add('NONE')
+                
+            # Handle ops manager
+            ops_manager = record.get('Ops Manager')
+            if ops_manager and ops_manager != 'null' and str(ops_manager).strip():
+                unique_opsmanagers.add(ops_manager)
+            else:
+                unique_opsmanagers.add('NONE')
     
     print(f"DEBUG: Rendering backup.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
     
-    return render_template('backup.html', 
+    # Get cache timestamp for display
+    cache_timestamp = None
+    if selected_regions or selected_environments:
+        # For backup, check the latest cache timestamp from any selected ops manager
+        latest_timestamp = None
+        for record in list_opsmanager['ops_manager']:
+            if ((not selected_regions or record.get('region') in selected_regions) and 
+                (not selected_environments or record.get('environment') in selected_environments)):
+                filename = get_cache_filename(record.get('name', record['url']), 'backup')
+                timestamp = get_cache_timestamp(filename)
+                if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
+                    latest_timestamp = timestamp
+        cache_timestamp = latest_timestamp
+    
+    return render_template('backup_material.html', 
                          unique_region=unique_region, 
                          unique_env=unique_env,
                          data=all_data,
@@ -450,8 +472,10 @@ def second_page():
                          selected_environments=selected_environments,
                          unique_usernames=sorted(unique_usernames),
                          unique_backup_statuses=sorted(unique_backup_statuses),
+                         unique_opsmanagers=sorted(unique_opsmanagers),
                          status_message=status_message,
                          status_type=status_type,
+                         cache_timestamp=cache_timestamp,
                          list_opsmanager=list_opsmanager)
 
 @app.route('/monitoring', methods=['GET', 'POST'])
@@ -545,8 +569,9 @@ def monitoring_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} hosts from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames from the filtered data
+    # Extract unique usernames and ops managers from the filtered data
     unique_usernames = set()
+    unique_opsmanagers = set()
     
     if all_data:
         for record in all_data:
@@ -556,18 +581,41 @@ def monitoring_page():
                 unique_usernames.add(username)
             else:
                 unique_usernames.add('NONE')
+                
+            # Handle ops manager
+            ops_manager = record.get('Ops Manager')
+            if ops_manager and ops_manager != 'null' and str(ops_manager).strip():
+                unique_opsmanagers.add(ops_manager)
+            else:
+                unique_opsmanagers.add('NONE')
     
     print(f"DEBUG: Rendering monitoring.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
     
-    return render_template('monitoring.html', 
+    # Get cache timestamp for display
+    cache_timestamp = None
+    if selected_regions or selected_environments:
+        # For monitoring, check the latest cache timestamp from any selected ops manager
+        latest_timestamp = None
+        for record in list_opsmanager['ops_manager']:
+            if ((not selected_regions or record.get('region') in selected_regions) and 
+                (not selected_environments or record.get('environment') in selected_environments)):
+                filename = get_cache_filename(record.get('name', record['url']), 'monitoring')
+                timestamp = get_cache_timestamp(filename)
+                if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
+                    latest_timestamp = timestamp
+        cache_timestamp = latest_timestamp
+    
+    return render_template('monitoring_material.html', 
                          unique_region=unique_region, 
                          unique_env=unique_env,
                          data=all_data,
                          selected_regions=selected_regions,
                          selected_environments=selected_environments,
                          unique_usernames=sorted(unique_usernames),
+                         unique_opsmanagers=sorted(unique_opsmanagers),
                          status_message=status_message,
                          status_type=status_type,
+                         cache_timestamp=cache_timestamp,
                          list_opsmanager=list_opsmanager)
 
 if __name__ == '__main__':

@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
+  <title>{% block title %}MongoDB Ops Manager Dashboard{% endblock %}</title>
+  
+  <!-- CSS files -->
+  <link href="../static/tabler/css/tabler.min.css" rel="stylesheet"/>
+  <link href="../static/tabler/icons/tabler-icons.min.css" rel="stylesheet"/>
+  <link href="../static/fonts/source-sans-3.css" rel="stylesheet"/>
+  
+  <style>
+    :root {
+      --tblr-font-sans-serif: "Source Sans 3", -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      --tblr-primary: #13AA52;
+      --tblr-primary-rgb: 19, 170, 82;
+    }
+    
+    /* Loading States */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      backdrop-filter: blur(2px);
+    }
+    
+    .loading-content {
+      text-align: center;
+      padding: 2rem;
+      border-radius: 1rem;
+      background: white;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+    }
+    
+    .loading-spinner {
+      width: 3rem;
+      height: 3rem;
+      margin: 0 auto 1rem;
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #206bc4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .progress-bar {
+      width: 200px;
+      height: 4px;
+      background: #f3f4f6;
+      border-radius: 2px;
+      margin: 1rem auto;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: #13AA52;
+      border-radius: 2px;
+      animation: progress 2s ease-in-out infinite;
+    }
+    
+    @keyframes progress {
+      0% { width: 0%; }
+      50% { width: 70%; }
+      100% { width: 100%; }
+    }
+    
+    /* Card enhancements */
+    .card {
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      border: none;
+      border-radius: 0.75rem;
+    }
+    
+    .card-header {
+      background: rgba(19, 170, 82, 0.05);
+      border-bottom: 1px solid rgba(19, 170, 82, 0.1);
+      border-radius: 0.75rem 0.75rem 0 0 !important;
+    }
+    
+    /* Table improvements */
+    .table thead th {
+      background: #f8fafc;
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: #374151;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .table tbody tr {
+      transition: background-color 0.15s ease;
+    }
+    
+    .table tbody tr:hover {
+      background-color: rgba(19, 170, 82, 0.02);
+    }
+    
+    /* Button improvements */
+    .btn {
+      border-radius: 0.5rem;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Status indicators */
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 0.5rem;
+    }
+    
+    .status-online { background: #10b981; }
+    .status-warning { background: #f59e0b; }
+    .status-offline { background: #ef4444; }
+    
+    /* Form improvements */
+    .form-control {
+      border-radius: 0.5rem;
+      border: 1px solid #e5e7eb;
+      transition: all 0.15s ease;
+    }
+    
+    .form-control:focus {
+      border-color: #13AA52;
+      box-shadow: 0 0 0 3px rgba(19, 170, 82, 0.1);
+    }
+    
+    /* Alert improvements */
+    .alert {
+      border-radius: 0.75rem;
+      border: none;
+    }
+    
+    /* Ops Manager Cards */
+    .ops-manager-card {
+      background: #13AA52;
+      color: white;
+      border-radius: 1rem;
+    }
+    
+    .ops-manager-card .card-body {
+      padding: 1.5rem;
+    }
+    
+    /* MongoDB themed card variations */
+    .mongodb-card-primary {
+      background: #13AA52;
+      color: white;
+    }
+    
+    .mongodb-card-secondary {
+      background: #001E2B;
+      color: white;
+    }
+  </style>
+  
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <h4 class="mb-2">Retrieving Data</h4>
+      <p class="text-muted mb-0">Retrieving data from API...</p>
+    </div>
+  </div>
+
+  <div class="page">
+    <!-- Navbar -->
+    <header class="navbar navbar-expand-md navbar-light d-print-none">
+      <div class="container-xl">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu" aria-controls="navbar-menu" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <h1 class="navbar-brand navbar-brand-autodark d-none-navbar-horizontal pe-0 pe-md-3">
+          <a href="/">
+            <img src="../static/assets/img/AdminLTELogo.png" width="32" height="32" alt="MongoDB" class="navbar-brand-image">
+            MongoDB Ops Manager
+          </a>
+        </h1>
+      </div>
+    </header>
+    
+    <!-- Navigation -->
+    <div class="navbar-expand-md">
+      <div class="collapse navbar-collapse" id="navbar-menu">
+        <div class="navbar navbar-light">
+          <div class="container-xl">
+            <ul class="navbar-nav">
+              <li class="nav-item">
+                <a class="nav-link" href="/">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block">
+                    <i class="ti ti-home"></i>
+                  </span>
+                  <span class="nav-link-title">Dashboard</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="/backup">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block">
+                    <i class="ti ti-shield-check"></i>
+                  </span>
+                  <span class="nav-link-title">Backup Users</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="/monitoring">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block">
+                    <i class="ti ti-users"></i>
+                  </span>
+                  <span class="nav-link-title">Monitoring Users</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Page wrapper -->
+    <div class="page-wrapper">
+      <!-- Page header -->
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title">
+                {% block page_title %}Dashboard{% endblock %}
+              </h2>
+              <div class="text-muted mt-1">
+                {% block page_subtitle %}MongoDB Ops Manager monitoring and management{% endblock %}
+              </div>
+            </div>
+            <div class="col-12 col-md-auto ms-auto d-print-none">
+              <div class="btn-list">
+                {% block page_actions %}{% endblock %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Page body -->
+      <div class="page-body">
+        <div class="container-xl">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Libs JS -->
+  <script src="../static/js/bootstrap.min.js"></script>
+  
+  <!-- Tabler Core -->
+  <script src="../static/tabler/js/tabler.min.js"></script>
+  
+  <!-- Simplified Loading Experience -->
+  <script>
+    // Simple loading overlay functions
+    function showLoading() {
+      const overlay = document.getElementById('loadingOverlay');
+      if (overlay) {
+        overlay.style.display = 'flex';
+      }
+    }
+    
+    // Hide loading overlay
+    function hideLoading() {
+      const overlay = document.getElementById('loadingOverlay');
+      if (overlay) {
+        overlay.style.display = 'none';
+      }
+    }
+    
+    // Simple form submission with loading
+    function submitFormWithLoading(form, buttonElement) {
+      showLoading();
+      
+      // Show loading state on button
+      const originalContent = buttonElement.innerHTML;
+      buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading...';
+      buttonElement.disabled = true;
+      
+      form.submit();
+      return false;
+    }
+    
+    // Auto-hide loading on page load
+    window.addEventListener('load', function() {
+      setTimeout(hideLoading, 500);
+    });
+    
+    // Simple loading for form submissions
+    document.addEventListener('DOMContentLoaded', function() {
+      // Add loading to refresh buttons
+      const refreshButtons = document.querySelectorAll('[data-loading="true"]');
+      refreshButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          const form = this.closest('form');
+          if (form) {
+            e.preventDefault();
+            submitFormWithLoading(form, this);
+          }
+        });
+      });
+      
+      // Add loading to form submissions
+      const forms = document.querySelectorAll('form');
+      forms.forEach(form => {
+        form.addEventListener('submit', function() {
+          showLoading();
+        });
+      });
+    });
+  </script>
+  
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

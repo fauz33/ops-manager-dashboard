@@ -1,0 +1,880 @@
+{% extends "base_material.html" %}
+
+{% block title %}Backup Users - MongoDB Ops Manager{% endblock %}
+{% block page_title %}Backup Users{% endblock %}
+{% block page_subtitle %}Monitor MongoDB backup users across all environments{% endblock %}
+
+{% block page_actions %}
+{% if selected_regions or selected_environments %}
+<button type="submit" form="filterForm" name="refresh_data" value="1" class="btn btn-primary" data-loading="true">
+  <i class="ti ti-refresh me-1"></i>
+  Refresh Data
+</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Status Messages -->
+{% if status_message %}
+<div class="row">
+  <div class="col-12">
+    <div class="alert alert-{% if status_type == 'error' %}danger{% elif status_type == 'warning' %}warning{% elif status_type == 'info' %}info{% else %}success{% endif %} alert-dismissible fade show" role="alert">
+      <div class="d-flex align-items-center">
+        <div class="me-2">
+          {% if status_type == 'success' %}
+            <i class="ti ti-check-circle"></i>
+          {% elif status_type == 'warning' %}
+            <i class="ti ti-alert-triangle"></i>
+          {% elif status_type == 'error' %}
+            <i class="ti ti-x-circle"></i>
+          {% else %}
+            <i class="ti ti-info-circle"></i>
+          {% endif %}
+        </div>
+        <div>{{ status_message }}</div>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Cache Info -->
+{% if selected_regions or selected_environments %}
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="alert alert-info d-flex align-items-center">
+      <i class="ti ti-clock me-2"></i>
+      <div>
+        <strong>Last Data Refresh:</strong> 
+        {% if cache_timestamp %}
+          <span id="cache-timestamp" data-utc="{{ cache_timestamp }}">{{ cache_timestamp[:19].replace('T', ' ') }} UTC</span>
+        {% else %}
+          No cached data available
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+<div class="row">
+  <!-- Data Table -->
+  <div class="col-lg-9">
+    <!-- Active Filters Display -->
+    <div id="active-filters" class="card mb-3" style="display: none;">
+      <div class="card-body py-2">
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center flex-wrap gap-2">
+            <small class="text-muted me-2">Active filters:</small>
+            <div id="filter-badges" class="d-flex flex-wrap gap-1"></div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllFilters()">
+            <i class="ti ti-x me-1"></i>Clear All
+          </button>
+        </div>
+      </div>
+    </div>
+    
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h3 class="card-title">
+          <i class="ti ti-database me-2"></i>
+          Backup User Status
+        </h3>
+        <div class="card-actions d-flex align-items-center">
+          {% if data and data|length > 0 %}
+          <button type="button" class="btn btn-success btn-sm me-2" onclick="exportToCSV('backup')" title="Export to CSV">
+            <i class="ti ti-download"></i>
+            Export CSV
+          </button>
+          {% endif %}
+          <span class="badge bg-{% if data and data|length > 0 %}primary{% else %}secondary{% endif %} fs-6">
+            {% if data %}{{ data|length }}{% else %}0{% endif %} clusters
+          </span>
+        </div>
+      </div>
+      
+      {% if data and data|length > 0 %}
+      <div class="card-body p-0">
+        <!-- Table Controls -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+          <div class="d-flex align-items-center">
+            <label for="rowsPerPage" class="form-label me-2 mb-0">Show:</label>
+            <select id="rowsPerPage" class="form-select form-select-sm w-auto" onchange="updatePagination()">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+            </select>
+            <span class="text-muted ms-2">entries</span>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <!-- Jump to Page -->
+            <div class="d-flex align-items-center" id="jump-to-page" style="display: none !important;">
+              <label class="form-label mb-0 me-2 text-nowrap">Go to:</label>
+              <input type="number" class="form-control form-control-sm" style="width: 70px;" 
+                     min="1" placeholder="1" id="pageJump" onkeypress="handlePageJump(event)">
+            </div>
+            
+            <!-- Smart Pagination -->
+            <nav aria-label="Table navigation">
+              <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+            </nav>
+          </div>
+        </div>
+        
+        <!-- Enhanced Table -->
+        <div class="table-responsive">
+          <table class="table table-hover mb-0" id="backup-table">
+            <thead>
+              <tr>
+                <th><i class="ti ti-server me-1"></i>Ops Manager</th>
+                <th><i class="ti ti-building me-1"></i>Project</th>
+                <th><i class="ti ti-copy me-1"></i>Replica Set</th>
+                <th><i class="ti ti-world me-1"></i>Hostname:Port</th>
+                <th><i class="ti ti-user me-1"></i>Username</th>
+                <th><i class="ti ti-clock me-1"></i>Last Ping</th>
+                <th><i class="ti ti-shield me-1"></i>Backup Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in data %}
+              <tr>
+                <td>
+                  <span class="text-muted">{{ item.get('Ops Manager', 'N/A') }}</span>
+                </td>
+                <td>
+                  <div class="d-flex align-items-center">
+                    {% set last_ping = item.get('Last Ping', '') or '' %}
+                    <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
+                    <strong>{{ item.get('Project', 'N/A') }}</strong>
+                  </div>
+                </td>
+                <td>
+                  <code class="text-primary">{{ item.get('Replica Set Name', 'N/A') }}</code>
+                </td>
+                <td>
+                  <span class="font-monospace text-info">{{ item.get('Hostname:Port', 'N/A') }}</span>
+                </td>
+                <td>
+                  {% set username = item.get('Username') %}
+                  {% if username and username != 'null' and username.strip() %}
+                    <span class="badge bg-green-lt">{{ username }}</span>
+                  {% else %}
+                    <span class="badge bg-secondary-lt">NONE</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="d-flex align-items-center">
+                    {% set last_ping = item.get('Last Ping', '') or '' %}
+                    <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
+                    <span class="{% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}text-success{% elif 'hour' in last_ping %}text-warning{% else %}text-danger{% endif %}">
+                      {{ last_ping or 'Unknown' }}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  {% set backup_status = item.get('Backup Status') %}
+                  {% if backup_status and backup_status != 'null' and backup_status.strip() %}
+                    <span class="badge bg-{% if 'enabled' in backup_status.lower() %}success{% elif 'disabled' in backup_status.lower() %}danger{% else %}secondary{% endif %}-lt">
+                      {{ backup_status }}
+                    </span>
+                  {% else %}
+                    <span class="badge bg-secondary-lt">NONE</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-body text-center py-5">
+        <div class="empty-state">
+          <div class="empty-state-icon bg-primary-lt">
+            <i class="ti ti-database-off"></i>
+          </div>
+          <h3 class="empty-state-title">No backup data available</h3>
+          <p class="empty-state-subtitle">Select regions and environments from the sidebar to view backup user status.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Sidebar Filters -->
+  <div class="col-lg-3">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="ti ti-filter me-2"></i>
+          Filters
+        </h3>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/backup" id="filterForm">
+          <!-- Data Source Selection -->
+          <div class="mb-4">
+            <h4 class="subheader mb-3">Data Source</h4>
+            
+            <div class="row">
+              <!-- Regions -->
+              <div class="col-12 mb-3">
+                <label class="form-label fw-semibold">
+                  <i class="ti ti-world-pin me-1"></i>
+                  Regions
+                </label>
+                {% for region in unique_region %}
+                <div class="form-check mb-1">
+                  <input class="form-check-input" type="checkbox" 
+                        id="regionCheckbox{{ loop.index }}" 
+                        name="regions"
+                        value="{{ region }}" 
+                        {% if region in selected_regions %}checked{% endif %}
+                        onchange="this.form.submit()">
+                  <label class="form-check-label" for="regionCheckbox{{ loop.index }}">
+                    {{ region.title() }}
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+              
+              <!-- Environments -->
+              <div class="col-12">
+                <label class="form-label fw-semibold">
+                  <i class="ti ti-settings me-1"></i>
+                  Environments
+                </label>
+                {% for env in unique_env %}
+                <div class="form-check mb-1">
+                  <input class="form-check-input" type="checkbox" 
+                        id="envCheckbox{{ loop.index }}" 
+                        name="environments"
+                        value="{{ env }}" 
+                        {% if env in selected_environments %}checked{% endif %}
+                        onchange="this.form.submit()">
+                  <label class="form-check-label" for="envCheckbox{{ loop.index }}">
+                    {{ env.title() }}
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Table Filters -->
+          {% if unique_usernames or unique_backup_statuses %}
+          <hr>
+          <div class="mb-3">
+            <h4 class="subheader mb-3">Table Filters</h4>
+            
+            {% if unique_usernames %}
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">
+                  <i class="ti ti-user me-1"></i>
+                  Username <span class="badge bg-secondary ms-1">{{ unique_usernames|length }}</span>
+                </label>
+                <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('username')">
+                  <i class="ti ti-chevron-down" id="username-chevron"></i>
+                </button>
+              </div>
+              
+              <div id="username-filter-group" class="collapse show">
+                <!-- Search in Username Filter -->
+                <div class="mb-2">
+                  <input type="text" class="form-control form-control-sm" 
+                         placeholder="Search usernames..." 
+                         onkeyup="searchInFilter(this, '.username-filter-item')"
+                         id="username-search">
+                </div>
+                
+                <!-- Select All/None for Username -->
+                <div class="mb-2 d-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.username-filter', true)">
+                    <i class="ti ti-check-all"></i> All
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.username-filter', false)">
+                    <i class="ti ti-x"></i> None
+                  </button>
+                </div>
+                
+                <!-- Username Filter Items in Single Column -->
+                <div class="username-filter-items" style="max-height: 300px; overflow-y: auto;">
+                  {% for username in unique_usernames %}
+                  <div class="username-filter-item">
+                    <div class="form-check form-check-sm mb-1">
+                      <input class="form-check-input username-filter" type="checkbox" 
+                            id="usernameFilter{{ loop.index }}" 
+                            value="{{ username }}"
+                            onchange="filterTable()">
+                      <label class="form-check-label" for="usernameFilter{{ loop.index }}">
+                        {{ username }}
+                      </label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+            
+            {% if unique_backup_statuses %}
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">
+                  <i class="ti ti-shield me-1"></i>
+                  Backup Status <span class="badge bg-secondary ms-1">{{ unique_backup_statuses|length }}</span>
+                </label>
+                <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('status')">
+                  <i class="ti ti-chevron-down" id="status-chevron"></i>
+                </button>
+              </div>
+              
+              <div id="status-filter-group" class="collapse show">
+                <!-- Search in Status Filter -->
+                <div class="mb-2">
+                  <input type="text" class="form-control form-control-sm" 
+                         placeholder="Search statuses..." 
+                         onkeyup="searchInFilter(this, '.status-filter-item')"
+                         id="status-search">
+                </div>
+                
+                <!-- Select All/None for Status -->
+                <div class="mb-2 d-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.status-filter', true)">
+                    <i class="ti ti-check-all"></i> All
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.status-filter', false)">
+                    <i class="ti ti-x"></i> None
+                  </button>
+                </div>
+                
+                <!-- Status Filter Items -->
+                <div class="status-filter-items" style="max-height: 200px; overflow-y: auto;">
+                  {% for status in unique_backup_statuses %}
+                  <div class="status-filter-item">
+                    <div class="form-check form-check-sm mb-1">
+                      <input class="form-check-input status-filter" type="checkbox" 
+                            id="statusFilter{{ loop.index }}" 
+                            value="{{ status }}"
+                            onchange="filterTable()">
+                      <label class="form-check-label" for="statusFilter{{ loop.index }}">
+                        {{ status }}
+                      </label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+            
+            {% if unique_opsmanagers %}
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">
+                  <i class="ti ti-server me-1"></i>
+                  Ops Manager <span class="badge bg-secondary ms-1">{{ unique_opsmanagers|length }}</span>
+                </label>
+                <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('opsmanager')">
+                  <i class="ti ti-chevron-down" id="opsmanager-chevron"></i>
+                </button>
+              </div>
+              
+              <div id="opsmanager-filter-group" class="collapse show">
+                <!-- Search in Ops Manager Filter -->
+                <div class="mb-2">
+                  <input type="text" class="form-control form-control-sm" 
+                         placeholder="Search ops managers..." 
+                         onkeyup="searchInFilter(this, '.opsmanager-filter-item')"
+                         id="opsmanager-search">
+                </div>
+                
+                <!-- Select All/None for Ops Manager -->
+                <div class="mb-2 d-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.opsmanager-filter', true)">
+                    <i class="ti ti-check-all"></i> All
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" 
+                          onclick="selectAllFilters('.opsmanager-filter', false)">
+                    <i class="ti ti-x"></i> None
+                  </button>
+                </div>
+                
+                <!-- Ops Manager Filter Items -->
+                <div class="opsmanager-filter-items" style="max-height: 300px; overflow-y: auto;">
+                  {% for opsmanager in unique_opsmanagers %}
+                  <div class="opsmanager-filter-item">
+                    <div class="form-check form-check-sm mb-1">
+                      <input class="form-check-input opsmanager-filter" type="checkbox" 
+                            id="opsmanagerFilter{{ loop.index }}" 
+                            value="{{ opsmanager }}"
+                            onchange="filterTable()">
+                      <label class="form-check-label" for="opsmanagerFilter{{ loop.index }}">
+                        {{ opsmanager }}
+                      </label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Enhanced pagination and table functionality with performance optimization
+let currentPage = 1;
+let rowsPerPage = 50; // Balanced default for better UX
+let tableRows = [];
+let filteredRows = []; // Cache filtered results
+
+function initPagination() {
+  const table = document.querySelector('#backup-table');
+  if (table) {
+    tableRows = Array.from(table.querySelectorAll('tbody tr'));
+    updatePagination();
+  }
+}
+
+function updatePagination() {
+  const rowsPerPageElement = document.getElementById('rowsPerPage');
+  if (rowsPerPageElement) {
+    rowsPerPage = parseInt(rowsPerPageElement.value);
+    if (isNaN(rowsPerPage)) {
+      rowsPerPage = 50;
+    }
+  }
+  currentPage = 1;
+  showPage(currentPage);
+  createSmartPaginationControls();
+  updateTableInfo();
+}
+
+function showPage(page) {
+  const start = (page - 1) * rowsPerPage;
+  const end = start + rowsPerPage;
+  
+  // Use filtered rows if available, otherwise use all rows
+  const rowsToShow = filteredRows.length > 0 ? filteredRows : tableRows;
+  
+  // Hide all rows first
+  tableRows.forEach(row => {
+    row.style.display = 'none';
+  });
+  
+  // Show only the current page rows
+  rowsToShow.slice(start, end).forEach(row => {
+    row.style.display = '';
+  });
+}
+
+function createSmartPaginationControls() {
+  const totalRows = filteredRows.length > 0 ? filteredRows.length : tableRows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
+  const paginationUl = document.getElementById('pagination');
+  const jumpToPage = document.getElementById('jump-to-page');
+  
+  paginationUl.innerHTML = '';
+
+  if (totalPages <= 1) {
+    if (jumpToPage) jumpToPage.style.display = 'none';
+    return;
+  }
+
+  // Show jump-to-page for large datasets
+  if (jumpToPage) {
+    if (totalPages > 10) {
+      jumpToPage.style.display = 'flex';
+      document.getElementById('pageJump').max = totalPages;
+    } else {
+      jumpToPage.style.display = 'none';
+    }
+  }
+
+  // Previous button
+  const prevLi = document.createElement('li');
+  prevLi.className = 'page-item' + (currentPage === 1 ? ' disabled' : '');
+  prevLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage - 1}); return false;">Previous</a>`;
+  paginationUl.appendChild(prevLi);
+
+  // Page numbers (show max 5 pages)
+  let startPage = Math.max(1, currentPage - 2);
+  let endPage = Math.min(totalPages, startPage + 4);
+  
+  if (endPage - startPage < 4) {
+    startPage = Math.max(1, endPage - 4);
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    const li = document.createElement('li');
+    li.className = 'page-item' + (i === currentPage ? ' active' : '');
+    li.innerHTML = `<a class="page-link" href="#" onclick="changePage(${i}); return false;">${i}</a>`;
+    paginationUl.appendChild(li);
+  }
+
+  // Next button
+  const nextLi = document.createElement('li');
+  nextLi.className = 'page-item' + (currentPage === totalPages ? ' disabled' : '');
+  nextLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage + 1}); return false;">Next</a>`;
+  paginationUl.appendChild(nextLi);
+}
+
+function changePage(page) {
+  const totalRows = filteredRows.length > 0 ? filteredRows.length : tableRows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  showPage(currentPage);
+  createSmartPaginationControls();
+  updateTableInfo();
+}
+
+// Jump to page functionality
+function handlePageJump(event) {
+  if (event.key === 'Enter') {
+    const pageInput = event.target;
+    const pageNumber = parseInt(pageInput.value);
+    const totalRows = filteredRows.length > 0 ? filteredRows.length : tableRows.length;
+    const totalPages = Math.ceil(totalRows / rowsPerPage);
+    
+    if (pageNumber && pageNumber >= 1 && pageNumber <= totalPages) {
+      changePage(pageNumber);
+      pageInput.value = ''; // Clear input
+    } else {
+      pageInput.value = ''; // Clear invalid input
+      alert(`Please enter a page number between 1 and ${totalPages}`);
+    }
+  }
+}
+
+// Enhanced CSV export with progress indication for large datasets
+function exportToCSV(dataType) {
+  const table = document.querySelector('#backup-table');
+  if (!table) {
+    alert('No table data available to export.');
+    return;
+  }
+  
+  // Show loading state for export
+  const exportButton = document.querySelector('[onclick*="exportToCSV"]');
+  if (exportButton) {
+    const originalText = exportButton.innerHTML;
+    exportButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Exporting...';
+    exportButton.disabled = true;
+    
+    setTimeout(() => {
+      exportButton.innerHTML = originalText;
+      exportButton.disabled = false;
+    }, 2000);
+  }
+  
+  // Use only visible/filtered rows for better performance
+  const rows = filteredRows.length > 0 ? filteredRows : table.querySelectorAll('tbody tr:not([style*="display: none"])');
+  const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
+  
+  if (visibleRows.length === 0) {
+    alert('No visible data to export.');
+    return;
+  }
+  
+  // Get headers
+  const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
+  
+  // Create CSV content
+  let csvContent = '';
+  csvContent += headers.map(header => `"${header.replace(/"/g, '""')}"`).join(',') + '\n';
+  
+  // Add data rows
+  visibleRows.forEach(row => {
+    const cells = Array.from(row.querySelectorAll('td')).map(td => {
+      let text = td.textContent.trim();
+      return `"${text.replace(/"/g, '""')}"`;
+    });
+    csvContent += cells.join(',') + '\n';
+  });
+  
+  // Create download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  
+  const now = new Date();
+  const timestamp = now.getFullYear() + 
+    String(now.getMonth() + 1).padStart(2, '0') + 
+    String(now.getDate()).padStart(2, '0') + '_' +
+    String(now.getHours()).padStart(2, '0') + 
+    String(now.getMinutes()).padStart(2, '0');
+  
+  link.setAttribute('download', `mongodb_${dataType}_${timestamp}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+
+// Simplified table filtering function
+function filterTable() {
+  const table = document.querySelector('#backup-table');
+  if (!table) return;
+
+  const usernameCheckboxes = document.querySelectorAll('.username-filter:checked');
+  const statusCheckboxes = document.querySelectorAll('.status-filter:checked');
+  const opsmanagerCheckboxes = document.querySelectorAll('.opsmanager-filter:checked');
+  
+  const selectedUsernames = Array.from(usernameCheckboxes).map(cb => cb.value.toLowerCase());
+  const selectedStatuses = Array.from(statusCheckboxes).map(cb => cb.value.toLowerCase());
+  const selectedOpsmanagers = Array.from(opsmanagerCheckboxes).map(cb => cb.value.toLowerCase());
+  
+  const rows = table.querySelectorAll('tbody tr');
+  filteredRows = [];
+  
+  rows.forEach(row => {
+    const cells = Array.from(row.querySelectorAll('td'));
+    let showRow = true;
+    
+    // Ops Manager filter
+    if (selectedOpsmanagers.length > 0) {
+      const opsmanagerCell = cells[0]; // Ops Manager column (leftmost)
+      const opsmanagerText = opsmanagerCell ? opsmanagerCell.textContent.toLowerCase().trim() : '';
+      showRow = showRow && selectedOpsmanagers.some(filter => opsmanagerText.includes(filter));
+    }
+    
+    // Username filter
+    if (selectedUsernames.length > 0) {
+      const usernameCell = cells[4]; // Username column  
+      const usernameText = usernameCell ? usernameCell.textContent.toLowerCase().trim() : '';
+      showRow = showRow && selectedUsernames.some(filter => usernameText.includes(filter));
+    }
+    
+    // Status filter
+    if (selectedStatuses.length > 0) {
+      const statusCell = cells[6]; // Backup Status column
+      const statusText = statusCell ? statusCell.textContent.toLowerCase().trim() : '';
+      showRow = showRow && selectedStatuses.some(filter => statusText.includes(filter));
+    }
+    
+    if (showRow) filteredRows.push(row);
+  });
+  
+  // Update pagination and display
+  currentPage = 1;
+  showPage(currentPage);
+  createSmartPaginationControls();
+  updateActiveFilters();
+  updateTableInfo();
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize table pagination
+  const table = document.querySelector('#backup-table');
+  if (table) {
+    initPagination();
+    // Initialize filtered rows with all rows
+    if (tableRows.length > 0) {
+      filteredRows = [...tableRows];
+      updateTableInfo();
+    }
+  }
+  
+  // Convert UTC timestamp to local timezone
+  convertTimestampToLocal();
+});
+
+// Convert cache timestamp to local timezone with timezone display
+function convertTimestampToLocal() {
+  const timestampElement = document.getElementById('cache-timestamp');
+  if (timestampElement && timestampElement.dataset.utc) {
+    try {
+      const utcTimestamp = timestampElement.dataset.utc;
+      const date = new Date(utcTimestamp);
+      
+      // Format date in YYYY-MM-DD format
+      const localDateString = date.getFullYear() + '-' + 
+        String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(date.getDate()).padStart(2, '0');
+      
+      const localTimeString = date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      
+      // Get timezone abbreviation
+      const timezone = date.toLocaleDateString('en-US', {
+        timeZoneName: 'short'
+      }).split(', ')[1];
+      
+      timestampElement.textContent = `${localDateString} ${localTimeString} ${timezone}`;
+    } catch (error) {
+      console.warn('Error converting timestamp:', error);
+    }
+  }
+}
+
+// Enhanced Filter UI Functions
+function toggleFilterGroup(groupName) {
+  const group = document.getElementById(`${groupName}-filter-group`);
+  const chevron = document.getElementById(`${groupName}-chevron`);
+  
+  if (group.classList.contains('show')) {
+    group.classList.remove('show');
+    chevron.classList.remove('ti-chevron-down');
+    chevron.classList.add('ti-chevron-right');
+  } else {
+    group.classList.add('show');
+    chevron.classList.remove('ti-chevron-right');
+    chevron.classList.add('ti-chevron-down');
+  }
+}
+
+function searchInFilter(searchInput, itemSelector) {
+  const searchTerm = searchInput.value.toLowerCase();
+  const items = document.querySelectorAll(itemSelector);
+  
+  items.forEach(item => {
+    const label = item.querySelector('.form-check-label');
+    if (label) {
+      const text = label.textContent.toLowerCase();
+      item.style.display = text.includes(searchTerm) ? 'block' : 'none';
+    }
+  });
+}
+
+function selectAllFilters(filterSelector, checked) {
+  const checkboxes = document.querySelectorAll(filterSelector);
+  checkboxes.forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+  filterTable(); // Trigger table filter update
+}
+
+// Enhanced UX Functions for Phase 3
+
+function updateTableInfo() {
+  const totalRows = tableRows.length;
+  const filteredCount = filteredRows.length > 0 ? filteredRows.length : totalRows;
+  const showing = Math.min(rowsPerPage, filteredCount);
+  
+  // Update table header info
+  const cardTitle = document.querySelector('.card-title');
+  if (cardTitle) {
+    const info = cardTitle.querySelector('.table-info');
+    if (info) {
+      info.remove();
+    }
+    if (totalRows > 0) {
+      const infoSpan = document.createElement('small');
+      infoSpan.className = 'text-muted ms-2 table-info';
+      if (filteredRows.length > 0 && filteredRows.length < totalRows) {
+        infoSpan.textContent = `(Showing ${showing} of ${filteredCount} filtered from ${totalRows} total)`;
+      } else {
+        infoSpan.textContent = `(Showing ${showing} of ${totalRows} total)`;
+      }
+      cardTitle.appendChild(infoSpan);
+    }
+  }
+}
+
+function updateActiveFilters() {
+  const activeFiltersCard = document.getElementById('active-filters');
+  const filterBadges = document.getElementById('filter-badges');
+  const badges = [];
+  
+  // Username filters
+  const selectedUsernames = Array.from(document.querySelectorAll('.username-filter:checked'))
+    .map(cb => cb.value);
+  selectedUsernames.forEach(username => {
+    badges.push({
+      type: 'username',
+      value: username,
+      label: `User: ${username}`,
+      class: 'bg-primary-lt'
+    });
+  });
+  
+  // Status filters
+  const selectedStatuses = Array.from(document.querySelectorAll('.status-filter:checked'))
+    .map(cb => cb.value);
+  selectedStatuses.forEach(status => {
+    badges.push({
+      type: 'status',
+      value: status,
+      label: `Status: ${status}`,
+      class: 'bg-warning-lt'
+    });
+  });
+  
+  // Ops Manager filters
+  const selectedOpsmanagers = Array.from(document.querySelectorAll('.opsmanager-filter:checked'))
+    .map(cb => cb.value);
+  selectedOpsmanagers.forEach(opsmanager => {
+    badges.push({
+      type: 'opsmanager',
+      value: opsmanager,
+      label: `Ops Manager: ${opsmanager}`,
+      class: 'bg-info-lt'
+    });
+  });
+  
+  // Update badges display
+  filterBadges.innerHTML = badges.map(badge => 
+    `<span class="badge ${badge.class} d-flex align-items-center">
+      ${badge.label}
+      <button type="button" class="btn-close btn-close-sm ms-1" 
+              onclick="removeFilter('${badge.type}', '${badge.value}')" 
+              aria-label="Remove filter"></button>
+     </span>`
+  ).join('');
+  
+  // Show/hide active filters card
+  activeFiltersCard.style.display = badges.length > 0 ? 'block' : 'none';
+}
+
+function removeFilter(type, value) {
+  if (type === 'username') {
+    const checkbox = document.querySelector(`input.username-filter[value="${value}"]`);
+    if (checkbox) checkbox.checked = false;
+  } else if (type === 'status') {
+    const checkbox = document.querySelector(`input.status-filter[value="${value}"]`);
+    if (checkbox) checkbox.checked = false;
+  } else if (type === 'opsmanager') {
+    const checkbox = document.querySelector(`input.opsmanager-filter[value="${value}"]`);
+    if (checkbox) checkbox.checked = false;
+  }
+  filterTable();
+}
+
+function clearAllFilters() {
+  document.querySelectorAll('.username-filter, .status-filter, .opsmanager-filter').forEach(cb => {
+    cb.checked = false;
+  });
+  filterTable();
+}
+
+</script>
+{% endblock %}
