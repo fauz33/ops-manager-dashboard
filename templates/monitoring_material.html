@@ -168,7 +168,7 @@
                               <label class="form-check-label" 
                                      for="replicasetColFilter{{ loop.index }}"
                                      title="{{ replicaset }}">
-                                {{ replicaset if replicaset != 'NONE' else 'No Replica Set' }}
+                                {{ replicaset }}
                               </label>
                             </div>
                           </div>
@@ -399,8 +399,11 @@
                             id="opsmanagerFilter{{ loop.index }}" 
                             value="{{ opsmanager }}"
                             onchange="filterTable()">
-                      <label class="form-check-label" for="opsmanagerFilter{{ loop.index }}">
-                        {{ opsmanager }}
+                      <label class="form-check-label" 
+                             for="opsmanagerFilter{{ loop.index }}"
+                             title="{{ opsmanager }}"
+                             data-bs-toggle="tooltip">
+                        {{ opsmanager | truncate_url }}
                       </label>
                     </div>
                   </div>
@@ -689,7 +692,7 @@ function applyReplicasetColumnFilter() {
   const selectedReplicasets = Array.from(document.querySelectorAll('.replicaset-column-filter:checked'))
     .map(cb => cb.value.toLowerCase());
   
-  const table = document.getElementById('monitoringTable');
+  const table = document.getElementById('clusters-table');
   if (!table) return;
   
   const rows = table.querySelectorAll('tbody tr');
@@ -699,10 +702,11 @@ function applyReplicasetColumnFilter() {
     const replicasetCell = cells[2]; // Replica Set is 3rd column (index 2)
     
     if (replicasetCell) {
-      const replicasetText = replicasetCell.textContent.trim().toLowerCase();
-      const replicasetValue = replicasetText === 'n/a' ? 'none' : replicasetText;
+      const replicasetText = replicasetCell.textContent.trim();
+      // Convert "N/A" to "NONE" to match our filter values
+      const replicasetValue = replicasetText === 'N/A' ? 'NONE' : replicasetText;
       
-      const shouldShow = selectedReplicasets.includes(replicasetValue);
+      const shouldShow = selectedReplicasets.includes(replicasetValue.toLowerCase());
       
       if (shouldShow) {
         row.classList.remove('d-none-replicaset');
