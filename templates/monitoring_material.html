@@ -125,7 +125,60 @@
               <tr>
                 <th><i class="ti ti-server me-1"></i>Ops Manager</th>
                 <th><i class="ti ti-building me-1"></i>Project</th>
-                <th><i class="ti ti-copy me-1"></i>Replica Set</th>
+                <th>
+                  <div class="d-flex align-items-center justify-content-between">
+                    <span><i class="ti ti-copy me-1"></i>Replica Set</span>
+                    {% if unique_replicasets and unique_replicasets|length > 1 %}
+                    <div class="dropdown">
+                      <button class="btn btn-sm p-0 ms-1" type="button" 
+                              data-bs-toggle="dropdown" aria-expanded="false"
+                              id="replicaset-filter-btn"
+                              title="Filter replica sets">
+                        <i class="ti ti-filter text-muted"></i>
+                      </button>
+                      <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 250px;">
+                        <div class="mb-2">
+                          <input type="text" class="form-control form-control-sm" 
+                                 placeholder="Search replica sets..." 
+                                 id="replicaset-search"
+                                 onkeyup="searchReplicasetFilter(this.value)">
+                        </div>
+                        
+                        <div class="mb-2 d-flex gap-1">
+                          <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" 
+                                  onclick="selectAllReplicasetFilters(true)">
+                            <i class="ti ti-check"></i> All
+                          </button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" 
+                                  onclick="selectAllReplicasetFilters(false)">
+                            <i class="ti ti-x"></i> None
+                          </button>
+                        </div>
+                        
+                        <div id="replicaset-filter-items" style="max-height: 200px; overflow-y: auto;">
+                          {% for replicaset in unique_replicasets %}
+                          <div class="replicaset-filter-item">
+                            <div class="form-check form-check-sm">
+                              <input class="form-check-input replicaset-column-filter" 
+                                     type="checkbox" 
+                                     value="{{ replicaset }}"
+                                     id="replicasetColFilter{{ loop.index }}"
+                                     checked
+                                     onchange="applyReplicasetColumnFilter()">
+                              <label class="form-check-label" 
+                                     for="replicasetColFilter{{ loop.index }}"
+                                     title="{{ replicaset }}">
+                                {{ replicaset if replicaset != 'NONE' else 'No Replica Set' }}
+                              </label>
+                            </div>
+                          </div>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </div>
+                    {% endif %}
+                  </div>
+                </th>
                 <th><i class="ti ti-world me-1"></i>Hostname:Port</th>
                 <th><i class="ti ti-user me-1"></i>Username</th>
                 <th><i class="ti ti-clock me-1"></i>Last Ping</th>
@@ -601,7 +654,96 @@ function clearAllFilters() {
   document.querySelectorAll('.username-filter, .opsmanager-filter').forEach(cb => {
     cb.checked = false;
   });
+  
+  // Reset replica set column filter
+  document.querySelectorAll('.replicaset-column-filter').forEach(cb => {
+    cb.checked = true;
+  });
+  updateReplicasetFilterIcon();
+  
   filterTable();
+}
+
+// Replica Set Column Filter Functions
+function searchReplicasetFilter(searchTerm) {
+  const items = document.querySelectorAll('.replicaset-filter-item');
+  const term = searchTerm.toLowerCase();
+  
+  items.forEach(item => {
+    const label = item.querySelector('.form-check-label');
+    if (label) {
+      const text = label.textContent.toLowerCase();
+      item.style.display = text.includes(term) ? 'block' : 'none';
+    }
+  });
+}
+
+function selectAllReplicasetFilters(selectAll) {
+  document.querySelectorAll('.replicaset-column-filter').forEach(cb => {
+    cb.checked = selectAll;
+  });
+  applyReplicasetColumnFilter();
+}
+
+function applyReplicasetColumnFilter() {
+  const selectedReplicasets = Array.from(document.querySelectorAll('.replicaset-column-filter:checked'))
+    .map(cb => cb.value.toLowerCase());
+  
+  const table = document.getElementById('monitoringTable');
+  if (!table) return;
+  
+  const rows = table.querySelectorAll('tbody tr');
+  
+  rows.forEach(row => {
+    const cells = Array.from(row.querySelectorAll('td'));
+    const replicasetCell = cells[2]; // Replica Set is 3rd column (index 2)
+    
+    if (replicasetCell) {
+      const replicasetText = replicasetCell.textContent.trim().toLowerCase();
+      const replicasetValue = replicasetText === 'n/a' ? 'none' : replicasetText;
+      
+      const shouldShow = selectedReplicasets.includes(replicasetValue);
+      
+      if (shouldShow) {
+        row.classList.remove('d-none-replicaset');
+      } else {
+        row.classList.add('d-none-replicaset');
+      }
+      
+      // Update row visibility based on all filters
+      const isHiddenByReplicaset = row.classList.contains('d-none-replicaset');
+      const isHiddenByOther = row.style.display === 'none';
+      
+      if (isHiddenByReplicaset || isHiddenByOther) {
+        row.style.display = 'none';
+      } else {
+        row.style.display = '';
+      }
+    }
+  });
+  
+  updateReplicasetFilterIcon();
+  updatePagination();
+}
+
+function updateReplicasetFilterIcon() {
+  const filterBtn = document.getElementById('replicaset-filter-btn');
+  if (!filterBtn) return;
+  
+  const totalFilters = document.querySelectorAll('.replicaset-column-filter').length;
+  const selectedFilters = document.querySelectorAll('.replicaset-column-filter:checked').length;
+  
+  const filterIcon = filterBtn.querySelector('i');
+  
+  if (selectedFilters === totalFilters) {
+    // All selected - show normal filter icon
+    filterIcon.className = 'ti ti-filter text-muted';
+    filterBtn.title = 'Filter replica sets';
+  } else {
+    // Some filtered - show active filter icon
+    filterIcon.className = 'ti ti-filter-filled text-primary';
+    filterBtn.title = `Filtering ${selectedFilters}/${totalFilters} replica sets`;
+  }
 }
 
 // Initialize on page load
@@ -615,6 +757,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Convert UTC timestamp to local timezone
   convertTimestampToLocal();
+  
+  // Initialize replica set column filter
+  updateReplicasetFilterIcon();
 });
 
 // Convert cache timestamp to local timezone with timezone display

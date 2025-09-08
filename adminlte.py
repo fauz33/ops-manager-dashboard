@@ -18,6 +18,63 @@ from get_monitoring import gather_monitoring_data_for_credentials
 
 app = Flask(__name__)
 
+def truncate_ops_manager_url(url, max_length=35):
+    """Smart truncation for Ops Manager URLs to fit in filter UI"""
+    if len(url) <= max_length:
+        return url
+    
+    # Handle different URL patterns
+    if '.' not in url:
+        # IP addresses or simple hostnames
+        return url
+    
+    parts = url.split('.')
+    
+    # AWS ELB/NLB pattern
+    if 'elb.amazonaws.com' in url or 'amazonaws.com' in url:
+        # Extract service identifier and region
+        service_parts = parts[0].split('-')
+        service_id = '-'.join(service_parts[:3]) if len(service_parts) >= 3 else parts[0]
+        # Find region part
+        region_part = next((part for part in parts if 'us-' in part or 'eu-' in part), parts[-3])
+        return f"...{service_id}...{region_part}.amazonaws.com"
+    
+    # Corporate domain pattern (opsmanager.region.env.company.com)
+    if len(parts) >= 4:
+        # Keep environment and company parts
+        important_parts = []
+        for part in parts[1:]:  # Skip first part (usually 'opsmanager')
+            if any(env in part for env in ['prod', 'dev', 'staging', 'test', 'non-prod']):
+                important_parts.append(part)
+            elif any(region in part for region in ['us-east', 'us-west', 'eu-', 'ap-']):
+                important_parts.append(part)
+        
+        # Keep last 2 parts (company.com) and important middle parts
+        if important_parts:
+            result = f"...{'.'.join(important_parts)}.{parts[-2]}.{parts[-1]}"
+        else:
+            result = f"...{parts[-3]}.{parts[-2]}.{parts[-1]}"
+        
+        # Add port if present
+        if ':' in url:
+            port = url.split(':')[-1]
+            result += f":{port}"
+        
+        return result
+    
+    # Default: show end of URL with ellipsis
+    if ':' in url:
+        base_url, port = url.rsplit(':', 1)
+        truncated_base = "..." + base_url[-(max_length-len(port)-4):]
+        return f"{truncated_base}:{port}"
+    
+    return "..." + url[-(max_length-3):]
+
+@app.template_filter('truncate_url')
+def truncate_url_filter(url):
+    """Template filter for URL truncation"""
+    return truncate_ops_manager_url(url)
+
 # Load list of all Ops Managers
 with open('list-opsmanager-all.json') as f:
     list_opsmanager = json.load(f)
@@ -420,10 +477,11 @@ def backup_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} clusters from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames, backup statuses, and ops managers from the filtered data
+    # Extract unique usernames, backup statuses, ops managers, and replica sets from the filtered data
     unique_usernames = set()
     unique_backup_statuses = set()
     unique_opsmanagers = set()
+    unique_replicasets = set()
     
     if all_data:
         for record in all_data:
@@ -447,6 +505,14 @@ def backup_page():
                 unique_opsmanagers.add(ops_manager)
             else:
                 unique_opsmanagers.add('NONE')
+                
+            # Handle replica set
+            replica_set = record.get('Replica Set Name')
+            if replica_set and replica_set != 'null' and str(replica_set).strip():
+                unique_replicasets.add(replica_set)
+            else:
+                unique_replicasets.add('NONE')
+                
     
     print(f"DEBUG: Rendering backup.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
     
@@ -473,6 +539,7 @@ def backup_page():
                          unique_usernames=sorted(unique_usernames),
                          unique_backup_statuses=sorted(unique_backup_statuses),
                          unique_opsmanagers=sorted(unique_opsmanagers),
+                         unique_replicasets=sorted(unique_replicasets),
                          status_message=status_message,
                          status_type=status_type,
                          cache_timestamp=cache_timestamp,
@@ -569,9 +636,10 @@ def monitoring_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} hosts from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames and ops managers from the filtered data
+    # Extract unique usernames, ops managers, and replica sets from the filtered data
     unique_usernames = set()
     unique_opsmanagers = set()
+    unique_replicasets = set()
     
     if all_data:
         for record in all_data:
@@ -588,6 +656,14 @@ def monitoring_page():
                 unique_opsmanagers.add(ops_manager)
             else:
                 unique_opsmanagers.add('NONE')
+                
+            # Handle replica set
+            replica_set = record.get('Replica Set Name')
+            if replica_set and replica_set != 'null' and str(replica_set).strip():
+                unique_replicasets.add(replica_set)
+            else:
+                unique_replicasets.add('NONE')
+                
     
     print(f"DEBUG: Rendering monitoring.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
     
@@ -613,6 +689,7 @@ def monitoring_page():
                          selected_environments=selected_environments,
                          unique_usernames=sorted(unique_usernames),
                          unique_opsmanagers=sorted(unique_opsmanagers),
+                         unique_replicasets=sorted(unique_replicasets),
                          status_message=status_message,
                          status_type=status_type,
                          cache_timestamp=cache_timestamp,
