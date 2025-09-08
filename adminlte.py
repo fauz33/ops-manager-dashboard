@@ -477,11 +477,10 @@ def backup_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} clusters from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames, backup statuses, ops managers, and replica sets from the filtered data
+    # Extract unique usernames, backup statuses, ops managers from the filtered data
     unique_usernames = set()
     unique_backup_statuses = set()
     unique_opsmanagers = set()
-    unique_replicasets = set()
     
     if all_data:
         for record in all_data:
@@ -505,13 +504,6 @@ def backup_page():
                 unique_opsmanagers.add(ops_manager)
             else:
                 unique_opsmanagers.add('NONE')
-                
-            # Handle replica set
-            replica_set = record.get('Replica Set Name')
-            if replica_set and replica_set != 'null' and str(replica_set).strip():
-                unique_replicasets.add(replica_set)
-            else:
-                unique_replicasets.add('NONE')
                 
     
     print(f"DEBUG: Rendering backup.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
@@ -539,7 +531,6 @@ def backup_page():
                          unique_usernames=sorted(unique_usernames),
                          unique_backup_statuses=sorted(unique_backup_statuses),
                          unique_opsmanagers=sorted(unique_opsmanagers),
-                         unique_replicasets=sorted(unique_replicasets),
                          status_message=status_message,
                          status_type=status_type,
                          cache_timestamp=cache_timestamp,
@@ -636,10 +627,9 @@ def monitoring_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} hosts from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique usernames, ops managers, and replica sets from the filtered data
+    # Extract unique usernames and ops managers from the filtered data
     unique_usernames = set()
     unique_opsmanagers = set()
-    unique_replicasets = set()
     
     if all_data:
         for record in all_data:
@@ -656,13 +646,6 @@ def monitoring_page():
                 unique_opsmanagers.add(ops_manager)
             else:
                 unique_opsmanagers.add('NONE')
-                
-            # Handle replica set
-            replica_set = record.get('Replica Set Name')
-            if replica_set and replica_set != 'null' and str(replica_set).strip():
-                unique_replicasets.add(replica_set)
-            else:
-                unique_replicasets.add('NONE')
                 
     
     print(f"DEBUG: Rendering monitoring.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
@@ -689,7 +672,6 @@ def monitoring_page():
                          selected_environments=selected_environments,
                          unique_usernames=sorted(unique_usernames),
                          unique_opsmanagers=sorted(unique_opsmanagers),
-                         unique_replicasets=sorted(unique_replicasets),
                          status_message=status_message,
                          status_type=status_type,
                          cache_timestamp=cache_timestamp,

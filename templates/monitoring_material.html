@@ -111,7 +111,22 @@
             </select>
             <span class="text-muted ms-2">entries</span>
           </div>
-          <div>
+          <div class="d-flex align-items-center gap-3">
+            <!-- Global Search -->
+            <div class="d-flex align-items-center">
+              <div class="input-group input-group-sm" style="max-width: 300px;">
+                <span class="input-group-text">
+                  <i class="ti ti-search"></i>
+                </span>
+                <input type="text" class="form-control" placeholder="Search all columns..." 
+                       id="globalSearch" onkeyup="performGlobalSearch()">
+                <button class="btn btn-outline-secondary" type="button" 
+                        onclick="clearGlobalSearch()" id="clearSearch" style="display: none;">
+                  <i class="ti ti-x"></i>
+                </button>
+              </div>
+            </div>
+            
             <nav aria-label="Table navigation">
               <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
             </nav>
@@ -125,60 +140,7 @@
               <tr>
                 <th><i class="ti ti-server me-1"></i>Ops Manager</th>
                 <th><i class="ti ti-building me-1"></i>Project</th>
-                <th>
-                  <div class="d-flex align-items-center justify-content-between">
-                    <span><i class="ti ti-copy me-1"></i>Replica Set</span>
-                    {% if unique_replicasets and unique_replicasets|length > 1 %}
-                    <div class="dropdown">
-                      <button class="btn btn-sm p-0 ms-1" type="button" 
-                              data-bs-toggle="dropdown" aria-expanded="false"
-                              id="replicaset-filter-btn"
-                              title="Filter replica sets">
-                        <i class="ti ti-filter text-muted"></i>
-                      </button>
-                      <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 250px;">
-                        <div class="mb-2">
-                          <input type="text" class="form-control form-control-sm" 
-                                 placeholder="Search replica sets..." 
-                                 id="replicaset-search"
-                                 onkeyup="searchReplicasetFilter(this.value)">
-                        </div>
-                        
-                        <div class="mb-2 d-flex gap-1">
-                          <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" 
-                                  onclick="selectAllReplicasetFilters(true)">
-                            <i class="ti ti-check"></i> All
-                          </button>
-                          <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" 
-                                  onclick="selectAllReplicasetFilters(false)">
-                            <i class="ti ti-x"></i> None
-                          </button>
-                        </div>
-                        
-                        <div id="replicaset-filter-items" style="max-height: 200px; overflow-y: auto;">
-                          {% for replicaset in unique_replicasets %}
-                          <div class="replicaset-filter-item">
-                            <div class="form-check form-check-sm">
-                              <input class="form-check-input replicaset-column-filter" 
-                                     type="checkbox" 
-                                     value="{{ replicaset }}"
-                                     id="replicasetColFilter{{ loop.index }}"
-                                     checked
-                                     onchange="applyReplicasetColumnFilter()">
-                              <label class="form-check-label" 
-                                     for="replicasetColFilter{{ loop.index }}"
-                                     title="{{ replicaset }}">
-                                {{ replicaset }}
-                              </label>
-                            </div>
-                          </div>
-                          {% endfor %}
-                        </div>
-                      </div>
-                    </div>
-                    {% endif %}
-                  </div>
-                </th>
+                <th><i class="ti ti-copy me-1"></i>Replica Set</th>
                 <th><i class="ti ti-world me-1"></i>Hostname:Port</th>
                 <th><i class="ti ti-user me-1"></i>Username</th>
                 <th><i class="ti ti-clock me-1"></i>Last Ping</th>
@@ -434,6 +396,11 @@ function initPagination() {
   const table = document.querySelector('#clusters-table');
   if (table) {
     tableRows = Array.from(table.querySelectorAll('tbody tr'));
+    // Initialize filtered rows with all rows
+    if (tableRows.length > 0) {
+      filteredRows = [...tableRows];
+      updateTableInfo();
+    }
     updatePagination();
   }
 }
@@ -448,20 +415,30 @@ function updatePagination() {
   }
   currentPage = 1;
   showPage(currentPage);
-  createSmartPaginationControls();
+  createPaginationControls();
   updateTableInfo();
 }
 
 function showPage(page) {
   const start = (page - 1) * rowsPerPage;
   const end = start + rowsPerPage;
-  tableRows.forEach((row, index) => {
-    row.style.display = (index >= start && index < end) ? '' : 'none';
+  
+  const rowsToShow = filteredRows.length > 0 ? filteredRows : tableRows;
+  
+  // Hide all rows first
+  tableRows.forEach(row => {
+    row.style.display = 'none';
+  });
+  
+  // Show only the rows for current page
+  rowsToShow.slice(start, end).forEach(row => {
+    row.style.display = '';
   });
 }
 
 function createPaginationControls() {
-  const totalPages = Math.ceil(tableRows.length / rowsPerPage);
+  const totalRows = filteredRows.length > 0 ? filteredRows.length : tableRows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
   const paginationUl = document.getElementById('pagination');
   paginationUl.innerHTML = '';
 
@@ -568,7 +545,12 @@ function filterTable() {
   const selectedUsernames = Array.from(usernameCheckboxes).map(cb => cb.value.toLowerCase());
   const selectedOpsmanagers = Array.from(opsmanagerCheckboxes).map(cb => cb.value.toLowerCase());
   
+  // Global search term
+  const searchInput = document.getElementById('globalSearch');
+  const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  
   const rows = table.querySelectorAll('tbody tr');
+  filteredRows = [];
   
   rows.forEach(row => {
     const cells = Array.from(row.querySelectorAll('td'));
@@ -588,14 +570,21 @@ function filterTable() {
       showRow = showRow && selectedUsernames.some(filter => usernameText.includes(filter));
     }
     
-    row.style.display = showRow ? '' : 'none';
+    // Global search filter (search across all columns)
+    if (searchTerm && showRow) {
+      const allCellText = Array.from(cells).map(cell => 
+        cell.textContent.toLowerCase().trim()
+      ).join(' ');
+      showRow = showRow && allCellText.includes(searchTerm);
+    }
+    
+    if (showRow) filteredRows.push(row);
   });
   
   // Update active filters display
   updateActiveFilters();
   
   // Update pagination after filtering
-  tableRows = Array.from(rows).filter(row => row.style.display !== 'none');
   updatePagination();
 }
 
@@ -658,97 +647,55 @@ function clearAllFilters() {
     cb.checked = false;
   });
   
-  // Reset replica set column filter
-  document.querySelectorAll('.replicaset-column-filter').forEach(cb => {
-    cb.checked = true;
-  });
-  updateReplicasetFilterIcon();
+  // Clear global search
+  const searchInput = document.getElementById('globalSearch');
+  if (searchInput) {
+    searchInput.value = '';
+    clearGlobalSearch();
+  }
   
   filterTable();
 }
 
-// Replica Set Column Filter Functions
-function searchReplicasetFilter(searchTerm) {
-  const items = document.querySelectorAll('.replicaset-filter-item');
-  const term = searchTerm.toLowerCase();
-  
-  items.forEach(item => {
-    const label = item.querySelector('.form-check-label');
-    if (label) {
-      const text = label.textContent.toLowerCase();
-      item.style.display = text.includes(term) ? 'block' : 'none';
-    }
-  });
-}
+// Global Search Functions
+let searchDebounceTimer;
 
-function selectAllReplicasetFilters(selectAll) {
-  document.querySelectorAll('.replicaset-column-filter').forEach(cb => {
-    cb.checked = selectAll;
-  });
-  applyReplicasetColumnFilter();
-}
-
-function applyReplicasetColumnFilter() {
-  const selectedReplicasets = Array.from(document.querySelectorAll('.replicaset-column-filter:checked'))
-    .map(cb => cb.value.toLowerCase());
-  
-  const table = document.getElementById('clusters-table');
-  if (!table) return;
-  
-  const rows = table.querySelectorAll('tbody tr');
-  
-  rows.forEach(row => {
-    const cells = Array.from(row.querySelectorAll('td'));
-    const replicasetCell = cells[2]; // Replica Set is 3rd column (index 2)
-    
-    if (replicasetCell) {
-      const replicasetText = replicasetCell.textContent.trim();
-      // Convert "N/A" to "NONE" to match our filter values
-      const replicasetValue = replicasetText === 'N/A' ? 'NONE' : replicasetText;
-      
-      const shouldShow = selectedReplicasets.includes(replicasetValue.toLowerCase());
-      
-      if (shouldShow) {
-        row.classList.remove('d-none-replicaset');
-      } else {
-        row.classList.add('d-none-replicaset');
-      }
-      
-      // Update row visibility based on all filters
-      const isHiddenByReplicaset = row.classList.contains('d-none-replicaset');
-      const isHiddenByOther = row.style.display === 'none';
-      
-      if (isHiddenByReplicaset || isHiddenByOther) {
-        row.style.display = 'none';
-      } else {
-        row.style.display = '';
-      }
-    }
-  });
-  
-  updateReplicasetFilterIcon();
-  updatePagination();
-}
-
-function updateReplicasetFilterIcon() {
-  const filterBtn = document.getElementById('replicaset-filter-btn');
-  if (!filterBtn) return;
-  
-  const totalFilters = document.querySelectorAll('.replicaset-column-filter').length;
-  const selectedFilters = document.querySelectorAll('.replicaset-column-filter:checked').length;
-  
-  const filterIcon = filterBtn.querySelector('i');
-  
-  if (selectedFilters === totalFilters) {
-    // All selected - show normal filter icon
-    filterIcon.className = 'ti ti-filter text-muted';
-    filterBtn.title = 'Filter replica sets';
-  } else {
-    // Some filtered - show active filter icon
-    filterIcon.className = 'ti ti-filter-filled text-primary';
-    filterBtn.title = `Filtering ${selectedFilters}/${totalFilters} replica sets`;
+function performGlobalSearch() {
+  // Clear existing timer
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
   }
+  
+  // Debounce search for performance
+  searchDebounceTimer = setTimeout(() => {
+    const searchInput = document.getElementById('globalSearch');
+    const clearBtn = document.getElementById('clearSearch');
+    
+    if (searchInput.value.trim()) {
+      clearBtn.style.display = 'block';
+    } else {
+      clearBtn.style.display = 'none';
+    }
+    
+    filterTable();
+  }, 300);
 }
+
+function clearGlobalSearch() {
+  const searchInput = document.getElementById('globalSearch');
+  const clearBtn = document.getElementById('clearSearch');
+  
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  if (clearBtn) {
+    clearBtn.style.display = 'none';
+  }
+  
+  filterTable();
+}
+
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -762,8 +709,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Convert UTC timestamp to local timezone
   convertTimestampToLocal();
   
-  // Initialize replica set column filter
-  updateReplicasetFilterIcon();
 });
 
 // Convert cache timestamp to local timezone with timezone display
