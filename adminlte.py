@@ -15,6 +15,7 @@ from get_request import (
     gather_data_for_credentials
 )
 from get_monitoring import gather_monitoring_data_for_credentials
+from get_backup_storage import gather_backup_storage_for_credentials
 
 app = Flask(__name__)
 
@@ -84,7 +85,7 @@ CACHE_DIR = 'cache'
 # Ensure cache directory and subfolders exist
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
-for subfolder in ['backup', 'monitoring']:
+for subfolder in ['backup', 'monitoring', 'backup_storage']:
     subfolder_path = os.path.join(CACHE_DIR, subfolder)
     if not os.path.exists(subfolder_path):
         os.makedirs(subfolder_path)
@@ -165,6 +166,8 @@ def fetch_and_cache_data(ops_manager, data_type='backup'):
         
         if data_type == 'monitoring':
             data = gather_monitoring_data_for_credentials(domain_url, public_key, private_key)
+        elif data_type == 'backup_storage':
+            data = gather_backup_storage_for_credentials(domain_url, public_key, private_key)
         else:
             data = gather_data_for_credentials(domain_url, public_key, private_key)
         
@@ -671,6 +674,160 @@ def monitoring_page():
                          selected_regions=selected_regions,
                          selected_environments=selected_environments,
                          unique_usernames=sorted(unique_usernames),
+                         unique_opsmanagers=sorted(unique_opsmanagers),
+                         status_message=status_message,
+                         status_type=status_type,
+                         cache_timestamp=cache_timestamp,
+                         list_opsmanager=list_opsmanager)
+
+@app.route('/backup-storage', methods=['GET', 'POST'])
+def backup_storage_page():
+    unique_region = {record['region'] for record in list_opsmanager['ops_manager']}
+    unique_env = {record['environment'] for record in list_opsmanager['ops_manager']}
+    
+    all_data = []
+    selected_regions = []
+    selected_environments = []
+    refresh_requested = False
+    status_message = ""
+    status_type = ""
+    
+    if request.method == 'POST':
+        print(f"DEBUG: POST request received for backup storage route")
+        print(f"DEBUG: Form data: {dict(request.form)}")
+        selected_regions = request.form.getlist('regions')
+        selected_environments = request.form.getlist('environments')
+        refresh_requested = 'refresh' in request.form
+        print(f"DEBUG: refresh_requested={refresh_requested}")
+        
+        # If refresh is requested, automatically select all regions and environments
+        if refresh_requested:
+            if not selected_regions and not selected_environments:
+                selected_regions = list(unique_region)
+                selected_environments = list(unique_env)
+                print(f"DEBUG: Refresh requested - auto-selecting all regions: {selected_regions} and environments: {selected_environments}")
+    
+    if selected_regions or selected_environments:
+        matching_ops_managers = []
+        for ops_manager in list_opsmanager['ops_manager']:
+            region_match = not selected_regions or ops_manager['region'] in selected_regions
+            env_match = not selected_environments or ops_manager['environment'] in selected_environments
+            if region_match and env_match:
+                matching_ops_managers.append(ops_manager)
+        
+        # Check if we need concurrent processing (refresh requested OR multiple cache files missing)
+        missing_cache_count = 0
+        for ops_manager in matching_ops_managers:
+            filename = get_cache_filename(ops_manager['url'], 'backup_storage')
+            cached_data = load_cache(filename)
+            if not cached_data:
+                missing_cache_count += 1
+        
+        # Use concurrent processing if refresh requested OR if 2+ cache files are missing
+        use_concurrent = refresh_requested or (missing_cache_count >= 2)
+        
+        if use_concurrent:
+            print(f"DEBUG: Using concurrent processing for backup storage - refresh_requested={refresh_requested}, missing_cache={missing_cache_count}")
+            all_data, status_message, status_type, total_fetched, total_cached, errors = fetch_multiple_ops_managers_concurrent(
+                matching_ops_managers, 'backup_storage', max_workers=4, refresh_requested=refresh_requested
+            )
+        else:
+            # Handle data loading sequentially
+            total_fetched = 0
+            total_cached = 0
+            errors = []
+            
+            for ops_manager in matching_ops_managers:
+                filename = get_cache_filename(ops_manager['url'], 'backup_storage')
+                cached_data = load_cache(filename)
+                
+                # If refresh requested or no cache exists, fetch from API
+                if refresh_requested or not cached_data:
+                    if refresh_requested and cached_data:
+                        clear_cache(filename)
+                    
+                    fresh_data = gather_backup_storage_for_credentials(
+                        ops_manager['url'], 
+                        ops_manager['public_key'], 
+                        ops_manager['private_key']
+                    )
+                    
+                    if fresh_data:
+                        try:
+                            save_cache(fresh_data, filename)
+                            all_data.extend(fresh_data)
+                            total_fetched += len(fresh_data)
+                        except Exception as cache_error:
+                            print(f"WARNING: Data retrieved but caching failed for {ops_manager['url']}: {cache_error}")
+                            all_data.extend(fresh_data)
+                            total_fetched += len(fresh_data)
+                    else:
+                        errors.append(f"{ops_manager['region']}-{ops_manager['environment']}: No backup storage data returned")
+                        # Try to use existing cache if fetch failed
+                        if cached_data:
+                            all_data.extend(cached_data)
+                            total_cached += len(cached_data)
+                else:
+                    # Use existing cache
+                    all_data.extend(cached_data)
+                    total_cached += len(cached_data)
+            
+            # Set status message
+            if refresh_requested:
+                if errors:
+                    status_message = f"Refresh completed with errors. Fetched {total_fetched} storage configs, used {total_cached} cached configs. Errors: {'; '.join(errors)}"
+                    status_type = "warning"
+                else:
+                    status_message = f"Data refreshed successfully! Fetched {total_fetched} backup storage configurations from API."
+                    status_type = "success"
+            elif total_fetched > 0:
+                status_message = f"Data retrieval completed! Fetched {total_fetched} backup storage configurations from API (cache was missing)."
+                status_type = "success"
+    
+    # Extract unique storage types and ops managers from the filtered data
+    unique_storage_types = set()
+    unique_opsmanagers = set()
+    
+    if all_data:
+        for record in all_data:
+            # Handle storage type
+            storage_type = record.get('type')
+            if storage_type and storage_type != 'null' and str(storage_type).strip():
+                unique_storage_types.add(storage_type)
+            else:
+                unique_storage_types.add('NONE')
+                
+            # Handle ops manager
+            ops_manager = record.get('Ops Manager')
+            if ops_manager and ops_manager != 'null' and str(ops_manager).strip():
+                unique_opsmanagers.add(ops_manager)
+            else:
+                unique_opsmanagers.add('NONE')
+                
+    
+    print(f"DEBUG: Rendering backup-storage.html with {len(all_data)} records, status='{status_message}', type='{status_type}'")
+    
+    # Get cache timestamp for display
+    cache_timestamp = None
+    if selected_regions or selected_environments:
+        # For backup storage, check the latest cache timestamp from any selected ops manager
+        latest_timestamp = None
+        for record in list_opsmanager['ops_manager']:
+            if ((not selected_regions or record.get('region') in selected_regions) and 
+                (not selected_environments or record.get('environment') in selected_environments)):
+                filename = get_cache_filename(record.get('name', record['url']), 'backup_storage')
+                timestamp = get_cache_timestamp(filename)
+                if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
+                    latest_timestamp = timestamp
+        cache_timestamp = latest_timestamp
+    
+    return render_template('backup_storage_material.html', 
+                         unique_region=unique_region, 
+                         unique_env=unique_env,
+                         data=all_data,
+                         selected_regions=selected_regions,
+                         selected_environments=selected_environments,
+                         unique_storage_types=sorted(unique_storage_types),
                          unique_opsmanagers=sorted(unique_opsmanagers),
                          status_message=status_message,
                          status_type=status_type,

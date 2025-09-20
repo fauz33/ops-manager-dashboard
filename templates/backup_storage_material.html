@@ -1,0 +1,802 @@
+{% extends "base_material.html" %}
+
+{% block title %}Backup Storage Info{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+  <!-- Status Alert -->
+  {% if status_message %}
+  <div class="container-xl">
+    <div class="alert alert-{{ 'danger' if status_type == 'error' else status_type }} alert-dismissible" role="alert">
+      <div class="d-flex">
+        <div>
+          <i class="ti ti-{% if status_type == 'success' %}check{% elif status_type == 'warning' %}alert-triangle{% else %}info-circle{% endif %} me-2"></i>
+        </div>
+        <div>
+          {{ status_message }}
+        </div>
+      </div>
+      <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="container-xl">
+    <div class="page-header d-print-none">
+      <div class="row g-2 align-items-center">
+        <div class="col">
+          <div class="page-pretitle">MongoDB Ops Manager</div>
+          <h2 class="page-title">Backup Storage Information</h2>
+          {% if cache_timestamp %}
+          <p class="text-muted" id="cache-timestamp" data-timestamp="{{ cache_timestamp }}">
+            <i class="ti ti-clock me-1"></i>
+            Last refreshed: <span class="timestamp-display">{{ cache_timestamp }}</span>
+          </p>
+          {% endif %}
+        </div>
+        <div class="col-12 col-md-auto ms-auto d-print-none">
+          <div class="btn-list">
+            <form method="post" style="display: inline;">
+              <input type="hidden" name="refresh" value="true">
+              <button type="submit" class="btn btn-primary" data-loading="true" title="Refresh data from API">
+                <i class="ti ti-refresh me-1"></i>
+                Refresh Data
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="container-xl">
+      <div class="row">
+        <!-- Table Section -->
+        <div class="col-lg-9">
+          <!-- Active Filters Display -->
+          <div id="active-filters" class="card mb-3" style="display: none;">
+            <div class="card-body py-2">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                  <small class="text-muted me-2">Active filters:</small>
+                  <div id="filter-badges" class="d-flex flex-wrap gap-1"></div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllFilters()">
+                  <i class="ti ti-x me-1"></i>Clear All
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <h3 class="card-title">
+                <i class="ti ti-database me-2"></i>
+                Backup Storage Configurations
+              </h3>
+              <div class="card-actions d-flex align-items-center">
+                {% if data and data|length > 0 %}
+                <button type="button" class="btn btn-success btn-sm me-2" onclick="exportToCSV('backup_storage')" title="Export to CSV">
+                  <i class="ti ti-download"></i>
+                  Export CSV
+                </button>
+                {% endif %}
+                <span class="badge bg-{% if data and data|length > 0 %}primary{% else %}secondary{% endif %} fs-6">
+                  {% if data %}{{ data|length }}{% else %}0{% endif %} configurations
+                </span>
+              </div>
+            </div>
+            
+            {% if data and data|length > 0 %}
+            <div class="card-body p-0">
+              <!-- Table Controls -->
+              <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <div class="d-flex align-items-center">
+                  <label for="rowsPerPage" class="form-label me-2 mb-0">Show:</label>
+                  <select id="rowsPerPage" class="form-select form-select-sm w-auto" onchange="updatePagination()">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                    <option value="500">500</option>
+                  </select>
+                  <span class="text-muted ms-2">entries</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <!-- Global Search -->
+                  <div class="d-flex align-items-center">
+                    <div class="input-group input-group-sm" style="max-width: 300px;">
+                      <span class="input-group-text">
+                        <i class="ti ti-search"></i>
+                      </span>
+                      <input type="text" class="form-control" placeholder="Search all columns..." 
+                             id="globalSearch" onkeyup="performGlobalSearch()">
+                      <button class="btn btn-outline-secondary" type="button" 
+                              onclick="clearGlobalSearch()" id="clearSearch" style="display: none;">
+                        <i class="ti ti-x"></i>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <!-- Smart Pagination -->
+                  <nav aria-label="Table navigation">
+                    <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                  </nav>
+                </div>
+              </div>
+              
+              <!-- Enhanced Table -->
+              <div class="table-responsive">
+                <table class="table table-hover mb-0" id="backup-storage-table">
+                  <thead>
+                    <tr>
+                      <th><i class="ti ti-server me-1"></i>Ops Manager</th>
+                      <th><i class="ti ti-tag me-1"></i>Storage Type</th>
+                      <th><i class="ti ti-id me-1"></i>Configuration ID</th>
+                      <th><i class="ti ti-link me-1"></i>URI</th>
+                      <th><i class="ti ti-bucket me-1"></i>S3 Bucket</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in data %}
+                    <tr>
+                      <td>
+                        <span class="text-muted">{{ item.get('Ops Manager', 'N/A') | truncate_url }}</span>
+                      </td>
+                      <td>
+                        <span class="badge bg-{% if item.get('type') == 'snapshot_s3' %}primary{% elif item.get('type') == 'oplog_s3' %}success{% elif item.get('type') == 'snapshot_blockstore' %}info{% elif item.get('type') == 'oplog_store' %}warning{% else %}secondary{% endif %}">
+                          {{ item.get('type', 'N/A').replace('_', ' ').title() }}
+                        </span>
+                      </td>
+                      <td>
+                        <code class="text-primary">{{ item.get('id', 'N/A') }}</code>
+                      </td>
+                      <td>
+                        <span class="font-monospace text-info">{{ item.get('uri', 'N/A') }}</span>
+                      </td>
+                      <td>
+                        {% if item.get('bucket_name') and item.get('bucket_name') != 'N/A' %}
+                        <span class="badge bg-azure-lt">{{ item.get('bucket_name') }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {% else %}
+            <div class="card-body">
+              <div class="empty">
+                <div class="empty-img"><img src="{{ url_for('static', filename='tabler/icons/fonts/tabler-icons.svg') }}#tabler-database" height="128" alt=""></div>
+                <p class="empty-title">No backup storage configurations found</p>
+                <p class="empty-subtitle text-muted">
+                  {% if not selected_regions and not selected_environments %}
+                  Select regions and environments to view backup storage configurations.
+                  {% else %}
+                  No backup storage configurations available for the selected criteria.
+                  {% endif %}
+                </p>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Filter Sidebar -->
+        <div class="col-lg-3">
+          <form method="POST" action="{{ url_for('backup_storage_page') }}">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Filters</h3>
+              </div>
+              <div class="card-body">
+                <!-- Region Filter -->
+                <div class="mb-3">
+                  <label class="form-label">Region</label>
+                  {% for region in unique_region %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="regions" value="{{ region }}" 
+                           id="region{{ loop.index }}" {% if region in selected_regions %}checked{% endif %}>
+                    <label class="form-check-label" for="region{{ loop.index }}">
+                      {{ region }}
+                    </label>
+                  </div>
+                  {% endfor %}
+                </div>
+
+                <!-- Environment Filter -->
+                <div class="mb-3">
+                  <label class="form-label">Environment</label>
+                  {% for env in unique_env %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="environments" value="{{ env }}" 
+                           id="env{{ loop.index }}" {% if env in selected_environments %}checked{% endif %}>
+                    <label class="form-check-label" for="env{{ loop.index }}">
+                      {{ env }}
+                    </label>
+                  </div>
+                  {% endfor %}
+                </div>
+
+                <div class="d-grid gap-2">
+                  <button type="submit" class="btn btn-primary">
+                    <i class="ti ti-filter"></i>
+                    Apply Filters
+                  </button>
+                  <button type="submit" name="refresh_data" value="true" class="btn btn-success">
+                    <i class="ti ti-refresh"></i>
+                    Refresh Data
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Storage Type Filter -->
+            {% if unique_storage_types %}
+            <div class="card mt-3">
+              <div class="card-header">
+                <h3 class="card-title">Storage Type Filter</h3>
+              </div>
+              <div class="card-body">
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0">
+                      <i class="ti ti-tag me-1"></i>
+                      Storage Type <span class="badge bg-secondary ms-1">{{ unique_storage_types|length }}</span>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('storagetype')">
+                      <i class="ti ti-chevron-down" id="storagetype-chevron"></i>
+                    </button>
+                  </div>
+                  
+                  <div id="storagetype-filter-group" class="collapse show">
+                    <!-- Search in Storage Type Filter -->
+                    <div class="mb-2">
+                      <input type="text" class="form-control form-control-sm" 
+                             placeholder="Search storage types..." 
+                             onkeyup="searchInFilter(this, '.storagetype-filter-item')"
+                             id="storagetype-search">
+                    </div>
+                    
+                    <!-- Select All/None for Storage Type -->
+                    <div class="mb-2 d-flex gap-1">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" 
+                              onclick="selectAllFilters('.storagetype-filter', true)">
+                        <i class="ti ti-check-all"></i> All
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" 
+                              onclick="selectAllFilters('.storagetype-filter', false)">
+                        <i class="ti ti-x"></i> None
+                      </button>
+                    </div>
+                    
+                    <!-- Storage Type Filter Items -->
+                    <div class="storagetype-filter-items" style="max-height: 200px; overflow-y: auto;">
+                      {% for storage_type in unique_storage_types %}
+                      <div class="storagetype-filter-item">
+                        <div class="form-check form-check-sm mb-1">
+                          <input class="form-check-input storagetype-filter" type="checkbox" 
+                                id="storagetypeFilter{{ loop.index }}" 
+                                value="{{ storage_type }}"
+                                checked
+                                onchange="filterTable()">
+                          <label class="form-check-label" 
+                                 for="storagetypeFilter{{ loop.index }}"
+                                 title="{{ storage_type }}">
+                            {{ storage_type.replace('_', ' ').title() if storage_type != 'NONE' else 'Unknown Type' }}
+                          </label>
+                        </div>
+                      </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- Ops Manager Filter -->
+            {% if unique_opsmanagers %}
+            <div class="card mt-3">
+              <div class="card-header">
+                <h3 class="card-title">Ops Manager Filter</h3>
+              </div>
+              <div class="card-body">
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0">
+                      <i class="ti ti-server me-1"></i>
+                      Ops Manager <span class="badge bg-secondary ms-1">{{ unique_opsmanagers|length }}</span>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('opsmanager')">
+                      <i class="ti ti-chevron-down" id="opsmanager-chevron"></i>
+                    </button>
+                  </div>
+                  
+                  <div id="opsmanager-filter-group" class="collapse show">
+                    <!-- Search in Ops Manager Filter -->
+                    <div class="mb-2">
+                      <input type="text" class="form-control form-control-sm" 
+                             placeholder="Search ops managers..." 
+                             onkeyup="searchInFilter(this, '.opsmanager-filter-item')"
+                             id="opsmanager-search">
+                    </div>
+                    
+                    <!-- Select All/None for Ops Manager -->
+                    <div class="mb-2 d-flex gap-1">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" 
+                              onclick="selectAllFilters('.opsmanager-filter', true)">
+                        <i class="ti ti-check-all"></i> All
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" 
+                              onclick="selectAllFilters('.opsmanager-filter', false)">
+                        <i class="ti ti-x"></i> None
+                      </button>
+                    </div>
+                    
+                    <!-- Ops Manager Filter Items -->
+                    <div class="opsmanager-filter-items" style="max-height: 200px; overflow-y: auto;">
+                      {% for opsmanager in unique_opsmanagers %}
+                      <div class="opsmanager-filter-item">
+                        <div class="form-check form-check-sm mb-1">
+                          <input class="form-check-input opsmanager-filter" type="checkbox" 
+                                id="opsmanagerFilter{{ loop.index }}" 
+                                value="{{ opsmanager }}"
+                                checked
+                                onchange="filterTable()">
+                          <label class="form-check-label" 
+                                 for="opsmanagerFilter{{ loop.index }}"
+                                 title="{{ opsmanager }}"
+                                 data-bs-toggle="tooltip">
+                            {{ opsmanager | truncate_url }}
+                          </label>
+                        </div>
+                      </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Enhanced pagination and table functionality with performance optimization
+let currentPage = 1;
+let rowsPerPage = 50; // Balanced default for better UX
+let tableRows = [];
+let filteredRows = []; // Cache filtered results
+
+function initPagination() {
+  const table = document.querySelector('#backup-storage-table');
+  if (table) {
+    tableRows = Array.from(table.querySelectorAll('tbody tr'));
+    updatePagination();
+  }
+}
+
+function updatePagination() {
+  const rowsPerPageElement = document.getElementById('rowsPerPage');
+  if (rowsPerPageElement) {
+    rowsPerPage = parseInt(rowsPerPageElement.value);
+    if (isNaN(rowsPerPage)) {
+      rowsPerPage = 50;
+    }
+  }
+  currentPage = 1;
+  showPage(currentPage);
+  createSmartPaginationControls();
+  updateTableInfo();
+}
+
+function showPage(page) {
+  const start = (page - 1) * rowsPerPage;
+  const end = start + rowsPerPage;
+  
+  // Use filtered rows if available, otherwise use all rows
+  const rowsToShow = filteredRows.length > 0 ? filteredRows : tableRows;
+  
+  // Hide all rows first
+  tableRows.forEach(row => {
+    row.style.display = 'none';
+  });
+  
+  // Show only the rows for current page
+  rowsToShow.slice(start, end).forEach(row => {
+    row.style.display = '';
+  });
+}
+
+function createSmartPaginationControls() {
+  const totalRows = filteredRows.length > 0 ? filteredRows.length : tableRows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
+  const paginationUl = document.getElementById('pagination');
+  
+  paginationUl.innerHTML = '';
+
+  if (totalPages <= 1) {
+    return;
+  }
+
+  // Previous button
+  const prevLi = document.createElement('li');
+  prevLi.className = 'page-item' + (currentPage === 1 ? ' disabled' : '');
+  const prevA = document.createElement('a');
+  prevA.className = 'page-link';
+  prevA.href = '#';
+  prevA.innerHTML = '<i class="ti ti-chevron-left"></i>';
+  prevA.onclick = (e) => { e.preventDefault(); if (currentPage > 1) changePage(currentPage - 1); };
+  prevLi.appendChild(prevA);
+  paginationUl.appendChild(prevLi);
+
+  // Page numbers (smart display)
+  let startPage = Math.max(1, currentPage - 2);
+  let endPage = Math.min(totalPages, currentPage + 2);
+
+  if (endPage - startPage < 4) {
+    if (startPage === 1) {
+      endPage = Math.min(totalPages, startPage + 4);
+    } else {
+      startPage = Math.max(1, endPage - 4);
+    }
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    const li = document.createElement('li');
+    li.className = 'page-item' + (i === currentPage ? ' active' : '');
+    const a = document.createElement('a');
+    a.className = 'page-link';
+    a.href = '#';
+    a.textContent = i;
+    a.onclick = (e) => { e.preventDefault(); changePage(i); };
+    li.appendChild(a);
+    paginationUl.appendChild(li);
+  }
+
+  // Next button
+  const nextLi = document.createElement('li');
+  nextLi.className = 'page-item' + (currentPage === totalPages ? ' disabled' : '');
+  const nextA = document.createElement('a');
+  nextA.className = 'page-link';
+  nextA.href = '#';
+  nextA.innerHTML = '<i class="ti ti-chevron-right"></i>';
+  nextA.onclick = (e) => { e.preventDefault(); if (currentPage < totalPages) changePage(currentPage + 1); };
+  nextLi.appendChild(nextA);
+  paginationUl.appendChild(nextLi);
+
+  updateTableInfo();
+}
+
+function changePage(page) {
+  currentPage = page;
+  showPage(currentPage);
+  createSmartPaginationControls();
+}
+
+// Enhanced CSV export with progress indication for large datasets
+function exportToCSV(dataType) {
+  const table = document.querySelector('#backup-storage-table');
+  if (!table) {
+    alert('No data to export');
+    return;
+  }
+
+  const rows = Array.from(table.querySelectorAll('tr'));
+  if (rows.length <= 1) {
+    alert('No data to export');
+    return;
+  }
+
+  const csvContent = [];
+  
+  // Process header row
+  const headerRow = rows[0];
+  const headerCells = Array.from(headerRow.querySelectorAll('th')).map(cell => {
+    return '"' + cell.textContent.trim().replace(/"/g, '""') + '"';
+  });
+  csvContent.push(headerCells.join(','));
+
+  // Process data rows (only visible ones if filtered)
+  const visibleRows = rows.slice(1).filter(row => row.style.display !== 'none');
+  
+  visibleRows.forEach(row => {
+    const cells = Array.from(row.querySelectorAll('td')).map(cell => {
+      const text = cell.textContent.trim().replace(/"/g, '""');
+      return '"' + text + '"';
+    });
+    csvContent.push(cells.join(','));
+  });
+
+  // Create and download file
+  const blob = new Blob([csvContent.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${dataType}_storage_data_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+function filterTable() {
+  const table = document.querySelector('#backup-storage-table');
+  if (!table) return;
+
+  const storagetypeCheckboxes = document.querySelectorAll('.storagetype-filter:checked');
+  const opsmanagerCheckboxes = document.querySelectorAll('.opsmanager-filter:checked');
+  
+  const selectedStorageTypes = Array.from(storagetypeCheckboxes).map(cb => cb.value.toLowerCase());
+  const selectedOpsmanagers = Array.from(opsmanagerCheckboxes).map(cb => cb.value.toLowerCase());
+  
+  // Global search term
+  const searchInput = document.getElementById('globalSearch');
+  const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  
+  const rows = table.querySelectorAll('tbody tr');
+  filteredRows = [];
+  
+  rows.forEach(row => {
+    const cells = Array.from(row.querySelectorAll('td'));
+    let showRow = true;
+    
+    // Ops Manager filter
+    if (selectedOpsmanagers.length > 0) {
+      const opsmanagerCell = cells[0]; // Ops Manager column (leftmost)
+      const opsmanagerText = opsmanagerCell ? opsmanagerCell.textContent.toLowerCase().trim() : '';
+      showRow = showRow && selectedOpsmanagers.some(filter => opsmanagerText.includes(filter));
+    }
+    
+    // Storage Type filter
+    if (selectedStorageTypes.length > 0) {
+      const storageTypeCell = cells[1]; // Storage Type column
+      const storageTypeText = storageTypeCell ? storageTypeCell.textContent.toLowerCase().trim() : '';
+      showRow = showRow && selectedStorageTypes.some(filter => storageTypeText.includes(filter));
+    }
+    
+    // Global search filter (search across all columns)
+    if (searchTerm && showRow) {
+      const allCellText = Array.from(cells).map(cell => 
+        cell.textContent.toLowerCase().trim()
+      ).join(' ');
+      showRow = showRow && allCellText.includes(searchTerm);
+    }
+    
+    if (showRow) filteredRows.push(row);
+  });
+  
+  // Update pagination and display
+  currentPage = 1;
+  showPage(currentPage);
+  createSmartPaginationControls();
+  updateActiveFilters();
+  updateTableInfo();
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize table pagination
+  const table = document.querySelector('#backup-storage-table');
+  if (table) {
+    initPagination();
+    // Initialize filtered rows with all rows
+    if (tableRows.length > 0) {
+      filteredRows = [...tableRows];
+      updateTableInfo();
+    }
+  }
+  
+  // Convert UTC timestamp to local timezone
+  convertTimestampToLocal();
+  
+});
+
+// Convert cache timestamp to local timezone with timezone display
+function convertTimestampToLocal() {
+  const timestampElement = document.getElementById('cache-timestamp');
+  if (timestampElement) {
+    const timestamp = timestampElement.getAttribute('data-timestamp');
+    if (timestamp) {
+      try {
+        const date = new Date(timestamp);
+        const options = {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'short'
+        };
+        const localTime = date.toLocaleString(undefined, options);
+        const displaySpan = timestampElement.querySelector('.timestamp-display');
+        if (displaySpan) {
+          displaySpan.textContent = localTime;
+        }
+      } catch (e) {
+        console.error('Error converting timestamp:', e);
+      }
+    }
+  }
+}
+
+function toggleFilterGroup(groupName) {
+  const group = document.getElementById(`${groupName}-filter-group`);
+  const chevron = document.getElementById(`${groupName}-chevron`);
+  
+  if (!group || !chevron) return;
+  
+  if (group.classList.contains('show')) {
+    group.classList.remove('show');
+    chevron.classList.remove('ti-chevron-down');
+    chevron.classList.add('ti-chevron-right');
+  } else {
+    group.classList.add('show');
+    chevron.classList.remove('ti-chevron-right');
+    chevron.classList.add('ti-chevron-down');
+  }
+}
+
+function searchInFilter(searchInput, itemSelector) {
+  const searchTerm = searchInput.value.toLowerCase();
+  const items = document.querySelectorAll(itemSelector);
+  
+  items.forEach(item => {
+    const label = item.querySelector('.form-check-label');
+    if (label) {
+      const text = label.textContent.toLowerCase();
+      item.style.display = text.includes(searchTerm) ? 'block' : 'none';
+    }
+  });
+}
+
+function selectAllFilters(filterSelector, checked) {
+  document.querySelectorAll(filterSelector).forEach(cb => {
+    cb.checked = checked;
+  });
+  filterTable();
+}
+
+function updateTableInfo() {
+  const totalRows = tableRows.length;
+  const filteredCount = filteredRows.length > 0 ? filteredRows.length : totalRows;
+  const showing = Math.min(rowsPerPage, filteredCount);
+  
+  const cardTitle = document.querySelector('.card-title');
+  if (cardTitle) {
+    const info = cardTitle.querySelector('.table-info');
+    if (info) info.remove();
+    const infoSpan = document.createElement('small');
+    infoSpan.className = 'text-muted ms-2 table-info';
+    infoSpan.textContent = `(${filteredCount} of ${totalRows})`;
+    
+    if (filteredRows.length > 0 && filteredRows.length < totalRows) {
+      infoSpan.textContent = `(${filteredCount} filtered from ${totalRows})`;
+    }
+    
+    cardTitle.appendChild(infoSpan);
+  }
+}
+
+function updateActiveFilters() {
+  const activeFiltersCard = document.getElementById('active-filters');
+  const filterBadges = document.getElementById('filter-badges');
+  const badges = [];
+  
+  // Storage Type filters
+  const selectedStorageTypes = Array.from(document.querySelectorAll('.storagetype-filter:checked')).map(cb => cb.value);
+  const totalStorageTypes = document.querySelectorAll('.storagetype-filter').length;
+  
+  if (selectedStorageTypes.length > 0 && selectedStorageTypes.length < totalStorageTypes) {
+    selectedStorageTypes.forEach(type => {
+      badges.push(`<span class="badge bg-primary me-1">Storage: ${type.replace('_', ' ')}<button type="button" class="btn-close btn-close-white ms-1" onclick="removeFilter('storagetype', '${type}')"></button></span>`);
+    });
+  }
+  
+  // Ops Manager filters
+  const selectedOpsmanagers = Array.from(document.querySelectorAll('.opsmanager-filter:checked')).map(cb => cb.value);
+  const totalOpsmanagers = document.querySelectorAll('.opsmanager-filter').length;
+  
+  if (selectedOpsmanagers.length > 0 && selectedOpsmanagers.length < totalOpsmanagers) {
+    selectedOpsmanagers.forEach(opsmanager => {
+      badges.push(`<span class="badge bg-success me-1">Ops Manager: ${opsmanager}<button type="button" class="btn-close btn-close-white ms-1" onclick="removeFilter('opsmanager', '${opsmanager}')"></button></span>`);
+    });
+  }
+  
+  // Global search
+  const searchInput = document.getElementById('globalSearch');
+  if (searchInput && searchInput.value.trim()) {
+    badges.push(`<span class="badge bg-info me-1">Search: "${searchInput.value}"<button type="button" class="btn-close btn-close-white ms-1" onclick="clearGlobalSearch()"></button></span>`);
+  }
+  
+  if (badges.length > 0) {
+    filterBadges.innerHTML = badges.join('');
+    activeFiltersCard.style.display = 'block';
+  } else {
+    activeFiltersCard.style.display = 'none';
+  }
+}
+
+function removeFilter(type, value) {
+  if (type === 'storagetype') {
+    const checkbox = Array.from(document.querySelectorAll('.storagetype-filter')).find(cb => cb.value === value);
+    if (checkbox) checkbox.checked = false;
+  } else if (type === 'opsmanager') {
+    const checkbox = Array.from(document.querySelectorAll('.opsmanager-filter')).find(cb => cb.value === value);
+    if (checkbox) checkbox.checked = false;
+  }
+  filterTable();
+}
+
+function clearAllFilters() {
+  document.querySelectorAll('.storagetype-filter, .opsmanager-filter').forEach(cb => {
+    cb.checked = cb.checked ? false : true; // Reset to all checked
+  });
+  
+  // Clear global search
+  const searchInput = document.getElementById('globalSearch');
+  if (searchInput) {
+    searchInput.value = '';
+    clearGlobalSearch();
+  }
+  
+  filterTable();
+}
+
+// Global Search Functions
+let searchDebounceTimer;
+
+function performGlobalSearch() {
+  // Clear existing timer
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  
+  // Debounce search for performance
+  searchDebounceTimer = setTimeout(() => {
+    const searchInput = document.getElementById('globalSearch');
+    const clearBtn = document.getElementById('clearSearch');
+    
+    if (searchInput.value.trim()) {
+      clearBtn.style.display = 'block';
+    } else {
+      clearBtn.style.display = 'none';
+    }
+    
+    filterTable();
+  }, 300);
+}
+
+function clearGlobalSearch() {
+  const searchInput = document.getElementById('globalSearch');
+  const clearBtn = document.getElementById('clearSearch');
+  
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  if (clearBtn) {
+    clearBtn.style.display = 'none';
+  }
+  
+  filterTable();
+}
+
+</script>
+{% endblock %}
