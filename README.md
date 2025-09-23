@@ -33,7 +33,7 @@ Edit `list-opsmanager-all.json`:
 
 ### 3. Run Dashboard
 ```bash
-python3 adminlte.py
+python3 app.py
 ```
 
 ### 4. Access Dashboard

@@ -104,7 +104,7 @@ The solution is a Flask-based web application with a three-tier architecture:
 
 CORE COMPONENTS:
 
-1. MAIN APPLICATION (adminlte.py)
+1. MAIN APPLICATION (app.py)
    • Route handlers for three main dashboards
    • Concurrent processing engine with 10-worker ThreadPool
    • Cache management system with automatic fallback

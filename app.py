@@ -6,6 +6,9 @@ from datetime import datetime
 import concurrent.futures
 import threading
 import time
+import requests
+from requests.auth import HTTPDigestAuth
+from urllib.parse import urlparse
 from get_request import (
     get_organization_list,
     get_project_list,
@@ -310,8 +313,231 @@ def fetch_multiple_ops_managers_concurrent(ops_managers_list, data_type='backup'
     
     return all_data, status_message, status_type, total_fetched, total_cached, errors
 
+def check_ops_manager_accessibility(url):
+    """
+    Check if Ops Manager URL is accessible with retry logic.
+    
+    Args:
+        url: The Ops Manager URL to check
+        
+    Returns:
+        dict: {'status': 'accessible'|'unreachable'|'timeout', 'response_time': float, 'attempts': int, 'details': str}
+    """
+    attempts = []
+    total_start_time = time.time()
+    
+    # First attempt: 5 second timeout
+    try:
+        start_time = time.time()
+        response = requests.get(f"{url}/", timeout=5, verify=False)
+        response_time = time.time() - start_time
+        attempts.append({'attempt': 1, 'status': 'success', 'response_time': response_time, 'timeout': 5})
+        
+        if response.status_code in [200, 401, 403]:  # These indicate the service is running
+            total_time = time.time() - total_start_time
+            return {
+                'status': 'accessible', 
+                'response_time': total_time,
+                'attempts': 1,
+                'details': f'Connected successfully on first attempt (HTTP {response.status_code})',
+                'attempt_details': attempts
+            }
+        else:
+            # Unexpected status code, try second attempt
+            attempts.append({'attempt': 1, 'status': 'unexpected_status', 'status_code': response.status_code, 'response_time': response_time})
+    except requests.exceptions.Timeout:
+        attempts.append({'attempt': 1, 'status': 'timeout', 'response_time': 5.0, 'timeout': 5})
+    except requests.exceptions.ConnectionError as e:
+        attempts.append({'attempt': 1, 'status': 'connection_error', 'response_time': time.time() - start_time, 'error': str(e)})
+    except Exception as e:
+        attempts.append({'attempt': 1, 'status': 'error', 'response_time': time.time() - start_time, 'error': str(e)})
+    
+    # Second attempt: 3 second timeout (faster)
+    try:
+        start_time = time.time()
+        response = requests.get(f"{url}/", timeout=3, verify=False)
+        response_time = time.time() - start_time
+        attempts.append({'attempt': 2, 'status': 'success', 'response_time': response_time, 'timeout': 3})
+        
+        if response.status_code in [200, 401, 403]:  # These indicate the service is running
+            total_time = time.time() - total_start_time
+            return {
+                'status': 'accessible', 
+                'response_time': total_time,
+                'attempts': 2,
+                'details': f'Connected successfully on second attempt (HTTP {response.status_code})',
+                'attempt_details': attempts
+            }
+        else:
+            attempts.append({'attempt': 2, 'status': 'unexpected_status', 'status_code': response.status_code, 'response_time': response_time})
+            total_time = time.time() - total_start_time
+            return {
+                'status': 'unreachable', 
+                'response_time': total_time,
+                'attempts': 2,
+                'details': f'Unexpected status code: {response.status_code} (tried 2 times)',
+                'attempt_details': attempts
+            }
+            
+    except requests.exceptions.Timeout:
+        attempts.append({'attempt': 2, 'status': 'timeout', 'response_time': 3.0, 'timeout': 3})
+        total_time = time.time() - total_start_time
+        return {
+            'status': 'timeout', 
+            'response_time': total_time,
+            'attempts': 2,
+            'details': 'Both attempts timed out (5s + 3s)',
+            'attempt_details': attempts
+        }
+    except requests.exceptions.ConnectionError as e:
+        attempts.append({'attempt': 2, 'status': 'connection_error', 'response_time': time.time() - start_time, 'error': str(e)})
+        total_time = time.time() - total_start_time
+        return {
+            'status': 'unreachable', 
+            'response_time': total_time,
+            'attempts': 2,
+            'details': 'Connection failed on both attempts',
+            'attempt_details': attempts
+        }
+    except Exception as e:
+        attempts.append({'attempt': 2, 'status': 'error', 'response_time': time.time() - start_time, 'error': str(e)})
+        total_time = time.time() - total_start_time
+        return {
+            'status': 'error', 
+            'response_time': total_time,
+            'attempts': 2,
+            'details': f'Error on both attempts: {str(e)}',
+            'attempt_details': attempts
+        }
+
+def check_api_authentication(url, public_key, private_key):
+    """
+    Check if API credentials can authenticate with Ops Manager.
+    
+    Args:
+        url: The Ops Manager URL
+        public_key: API public key
+        private_key: API private key
+        
+    Returns:
+        dict: {'status': 'authenticated'|'unauthorized'|'timeout'|'error', 'response_time': float}
+    """
+    try:
+        start_time = time.time()
+        # Use a simple API endpoint to test authentication
+        api_url = f"{url}/api/public/v1.0/orgs"
+        
+        response = requests.get(
+            api_url,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            auth=HTTPDigestAuth(public_key, private_key),
+            timeout=10,
+            verify=False
+        )
+        response_time = time.time() - start_time
+        
+        if response.status_code == 200:
+            return {'status': 'authenticated', 'response_time': response_time}
+        elif response.status_code in [401, 403]:
+            return {'status': 'unauthorized', 'response_time': response_time}
+        else:
+            return {'status': 'error', 'response_time': response_time, 'status_code': response.status_code}
+            
+    except requests.exceptions.Timeout:
+        return {'status': 'timeout', 'response_time': 10.0}
+    except requests.exceptions.ConnectionError:
+        return {'status': 'unreachable', 'response_time': 0.0}
+    except Exception as e:
+        return {'status': 'error', 'response_time': 0.0, 'error': str(e)}
+
+def check_ops_manager_status(ops_manager):
+    """
+    Check both accessibility and authentication for a single Ops Manager.
+    
+    Args:
+        ops_manager: Dict containing url, public_key, private_key, region, environment
+        
+    Returns:
+        dict: Combined status information
+    """
+    url = ops_manager['url']
+    public_key = ops_manager['public_key']
+    private_key = ops_manager['private_key']
+    
+    # Check accessibility
+    accessibility_result = check_ops_manager_accessibility(url)
+    
+    # Check authentication only if accessible
+    if accessibility_result['status'] == 'accessible':
+        auth_result = check_api_authentication(url, public_key, private_key)
+    else:
+        auth_result = {'status': 'not_checked', 'response_time': 0.0}
+    
+    return {
+        'url': url,
+        'hostname': urlparse(url).hostname or url,
+        'region': ops_manager['region'],
+        'environment': ops_manager['environment'],
+        'accessibility': accessibility_result,
+        'authentication': auth_result
+    }
+
 @app.route('/', methods=['GET', 'POST'])
-def index():
+def ops_manager_status():
+    """
+    Main dashboard showing status of all Ops Manager instances.
+    """
+    status_results = []
+    refresh_requested = False
+    
+    # Record when status checks are performed
+    check_timestamp = datetime.now()
+    
+    if request.method == 'POST' and 'refresh' in request.form:
+        refresh_requested = True
+    
+    # Check status for all Ops Managers concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_ops_manager = {
+            executor.submit(check_ops_manager_status, ops_manager): ops_manager
+            for ops_manager in list_opsmanager['ops_manager']
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_ops_manager):
+            try:
+                result = future.result()
+                status_results.append(result)
+            except Exception as e:
+                ops_manager = future_to_ops_manager[future]
+                status_results.append({
+                    'url': ops_manager['url'],
+                    'hostname': urlparse(ops_manager['url']).hostname or ops_manager['url'],
+                    'region': ops_manager['region'],
+                    'environment': ops_manager['environment'],
+                    'accessibility': {'status': 'error', 'response_time': 0.0, 'error': str(e)},
+                    'authentication': {'status': 'not_checked', 'response_time': 0.0}
+                })
+    
+    # Sort results by region and environment
+    status_results.sort(key=lambda x: (x['region'], x['environment']))
+    
+    # Calculate summary statistics
+    total_ops_managers = len(status_results)
+    accessible_count = sum(1 for r in status_results if r['accessibility']['status'] == 'accessible')
+    authenticated_count = sum(1 for r in status_results if r['authentication']['status'] == 'authenticated')
+    
+    return render_template(
+        'status_dashboard.html',
+        status_results=status_results,
+        total_ops_managers=total_ops_managers,
+        accessible_count=accessible_count,
+        authenticated_count=authenticated_count,
+        refresh_requested=refresh_requested,
+        check_timestamp=check_timestamp.isoformat()
+    )
+
+@app.route('/single-bkp-opsmanager', methods=['GET', 'POST'])
+def single_bkp_opsmanager():
     selected_ops_manager = None
     data = []
     refresh_requested = False
@@ -784,7 +1010,12 @@ def backup_storage_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} backup storage configurations from API (cache was missing)."
                 status_type = "success"
     
-    # Extract unique storage types and ops managers from the filtered data
+    # Separate data by storage type
+    snapshot_blockstore_data = []
+    snapshot_s3_data = []
+    oplog_store_data = []
+    oplog_s3_data = []
+    
     unique_storage_types = set()
     unique_opsmanagers = set()
     
@@ -794,6 +1025,16 @@ def backup_storage_page():
             storage_type = record.get('type')
             if storage_type and storage_type != 'null' and str(storage_type).strip():
                 unique_storage_types.add(storage_type)
+                
+                # Separate by storage type
+                if storage_type == 'snapshot_blockstore':
+                    snapshot_blockstore_data.append(record)
+                elif storage_type == 'snapshot_s3':
+                    snapshot_s3_data.append(record)
+                elif storage_type == 'oplog_store':
+                    oplog_store_data.append(record)
+                elif storage_type == 'oplog_s3':
+                    oplog_s3_data.append(record)
             else:
                 unique_storage_types.add('NONE')
                 
@@ -824,7 +1065,11 @@ def backup_storage_page():
     return render_template('backup_storage_material.html', 
                          unique_region=unique_region, 
                          unique_env=unique_env,
-                         data=all_data,
+                         data=all_data,  # Keep for backward compatibility
+                         snapshot_blockstore_data=snapshot_blockstore_data,
+                         snapshot_s3_data=snapshot_s3_data,
+                         oplog_store_data=oplog_store_data,
+                         oplog_s3_data=oplog_s3_data,
                          selected_regions=selected_regions,
                          selected_environments=selected_environments,
                          unique_storage_types=sorted(unique_storage_types),

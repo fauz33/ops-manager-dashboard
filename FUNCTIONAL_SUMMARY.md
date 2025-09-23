@@ -5,7 +5,7 @@ The MongoDB Ops Manager Dashboard is a Flask-based web application that provides
 
 ## Flow Architecture
 
-### 1. Main Application Flow (adminlte.py)
+### 1. Main Application Flow (app.py)
 ```
 User Request → Route Handler → Data Processing → Template Rendering → Response
                      ↓
@@ -22,7 +22,7 @@ Page Load → Initialize Components → User Interaction → Filter/Search → U
 
 ---
 
-## Backend Functions Analysis (adminlte.py)
+## Backend Functions Analysis (app.py)
 
 ### **URL Processing Functions**
 | Function | Status | Removable | Purpose |
@@ -45,13 +45,21 @@ Page Load → Initialize Components → User Interaction → Filter/Search → U
 | `fetch_and_cache_data(ops_manager, data_type='backup')` | ✅ **USABLE** | ❌ **KEEP** | Core function - fetch from API and cache results |
 | `fetch_multiple_ops_managers_concurrent(ops_managers_list, ...)` | ✅ **USABLE** | ❌ **KEEP** | **CRITICAL** - Concurrent processing for multiple Ops Managers |
 
+### **Status Check Functions**
+| Function | Status | Removable | Purpose |
+|----------|--------|-----------|---------|
+| `check_ops_manager_accessibility(url)` | ✅ **NEW** | ❌ **KEEP** | **ENHANCED** - Check Ops Manager accessibility with 2-attempt retry logic (5s + 3s timeouts) |
+| `check_api_authentication(url, public_key, private_key)` | ✅ **NEW** | ❌ **KEEP** | **CORE** - Verify API credentials can authenticate with Ops Manager |
+| `check_ops_manager_status(ops_manager)` | ✅ **NEW** | ❌ **KEEP** | **CORE** - Combined accessibility + authentication check for single Ops Manager |
+
 ### **Route Handlers**
 | Function | Status | Removable | Purpose |
 |----------|--------|-----------|---------|
-| `index()` | ⚠️ **LEGACY** | ⚠️ **REVIEW** | Legacy single Ops Manager view - may be unused |
+| `ops_manager_status()` | ✅ **NEW** | ❌ **KEEP** | **PRIMARY** - Main status dashboard showing all Ops Manager connectivity and authentication status |
+| `single_bkp_opsmanager()` | ⚠️ **LEGACY** | ⚠️ **REVIEW** | Legacy single Ops Manager view - renamed from `index()`, hidden from UI |
 | `backup_page()` | ✅ **USABLE** | ❌ **KEEP** | **PRIMARY** - Backup monitoring dashboard |
 | `monitoring_page()` | ✅ **USABLE** | ❌ **KEEP** | **PRIMARY** - Monitoring users dashboard |
-| `backup_storage_page()` | ✅ **USABLE** | ❌ **KEEP** | **PRIMARY** - Backup storage configuration dashboard |
+| `backup_storage_page()` | ✅ **ENHANCED** | ❌ **KEEP** | **PRIMARY** - Backup storage configuration dashboard with separated tables by storage type |
 
 ---
 
@@ -175,6 +183,21 @@ Page Load → Initialize Components → User Interaction → Filter/Search → U
 | `updateTableInfo()` | ✅ **USABLE** | ❌ **KEEP** | Update table statistics display |
 | `convertTimestampToLocal()` | ✅ **USABLE** | ❌ **KEEP** | Convert UTC timestamps to local timezone |
 
+### **Status Dashboard Functions (status_dashboard.html)**
+
+#### **Data Export Functions**
+| Function | Status | Removable | Purpose |
+|----------|--------|-----------|---------|
+| `exportToCSV()` | ✅ **NEW** | ❌ **KEEP** | Export status table data to CSV with timestamp |
+
+#### **Timestamp Management Functions**
+| Function | Status | Removable | Purpose |
+|----------|--------|-----------|---------|
+| `convertTimestampToLocal()` | ✅ **NEW** | ❌ **KEEP** | Convert server timestamp to user's local time zone |
+| `getRelativeTime(timestamp)` | ✅ **NEW** | ❌ **KEEP** | Calculate relative time display ("2 minutes ago") |
+| `updateRelativeTime()` | ✅ **NEW** | ❌ **KEEP** | Update relative time and freshness indicators with color coding |
+| `startTimestampUpdates()` | ✅ **NEW** | ❌ **KEEP** | Initialize automatic timestamp updates every 30 seconds |
+
 ---
 
 ## Key Features & Dependencies
@@ -186,8 +209,11 @@ Page Load → Initialize Components → User Interaction → Filter/Search → U
 4. **URL Truncation** - `truncate_ops_manager_url()` for long URLs
 5. **Pagination System** - All pagination functions
 6. **Filter System** - Sidebar filters + global search integration
-7. **Backup Storage Configuration** - 4 storage types (snapshot/oplog × blockstore/S3)
+7. **Backup Storage Configuration** - 4 storage types with separate tables per function
 8. **Refresh Data Button** - Force refresh bypassing cache
+9. **Status Dashboard** - Real-time Ops Manager connectivity and authentication monitoring
+10. **Retry Logic** - 2-attempt accessibility checks with enhanced error reporting
+11. **Timestamp Tracking** - Real-time timestamp display with freshness indicators
 
 ### **Performance Optimizations**
 1. **Debounced Search** - 300ms delay for global search
@@ -219,14 +245,14 @@ Page Load → Initialize Components → User Interaction → Filter/Search → U
 ### **External Modules**
 | Module | Purpose | Integration |
 |--------|---------|-------------|
-| `get_backup_storage.py` | **NEW** - Backup storage configuration retrieval | Imported into `adminlte.py` |
+| `get_backup_storage.py` | **NEW** - Backup storage configuration retrieval | Imported into `app.py` |
 | `list-opsmanager-all.json` | Configuration file with Ops Manager credentials | Used by all modules |
 
 ### **Data Processing Flow**
 ```
 get_backup_storage.py → gather_backup_storage_for_credentials() 
                      ↓
-adminlte.py → fetch_and_cache_data(data_type='backup_storage')
+app.py → fetch_and_cache_data(data_type='backup_storage')
                      ↓  
 ThreadPoolExecutor(10 workers) → Concurrent API calls
                      ↓
@@ -245,22 +271,30 @@ Template → backup_storage_material.html
 - All filtering functions (including new global search)
 - URL truncation functions
 - Concurrent processing functions
-- **NEW**: Backup storage API functions
-- **NEW**: Refresh data functionality
+- **NEW**: Status check functions with retry logic
+- **NEW**: Timestamp management and display functions
+- **NEW**: Backup storage API functions with separated table functionality
+- **NEW**: Enhanced UI feedback and error reporting functions
+- **NEW**: Table collapse/expand and type-specific export functions
 
 ### **Functions to Review**
-- `index()` route - Check if legacy route is still needed
+- `single_bkp_opsmanager()` route (formerly `index()`) - Legacy route hidden from UI, consider removal
 - `showFilterLoading()` - Appears unused in monitoring page
 
 ### **Functions to Remove**
 - ❌ No functions identified for removal - all serve active purposes
 
 ### **Recent Additions (✅ Completed)**
-1. **Backup Storage Module** - `get_backup_storage.py` with 4 API endpoint functions
-2. **Backup Storage Dashboard** - Complete page with filtering, pagination, search
-3. **Refresh Data Button** - Force fresh API data bypassing cache
-4. **Navigation Integration** - Added to main menu with database icon
-5. **Cache Support** - Extended caching system for backup_storage data type
+1. **Status Dashboard** - New main dashboard (`/`) with Ops Manager connectivity monitoring
+2. **Retry Logic** - 2-attempt accessibility checks with 5s + 3s timeouts
+3. **Enhanced UI Feedback** - Detailed error messages, attempt tracking, timing breakdown
+4. **Timestamp Display** - Real-time check timestamps with freshness indicators
+5. **Backup Storage Module** - `get_backup_storage.py` with 4 API endpoint functions
+6. **Separated Storage Tables** - Individual tables for each storage function type
+7. **Table Collapse/Expand** - Individual control for each storage type section
+8. **Type-specific Export** - CSV export for each storage type
+9. **File Rename** - `adminlte.py` → `app.py` for better Flask conventions
+10. **Navigation Restructure** - Status Dashboard as primary, single backup view hidden
 
 ### **Potential Improvements**
 1. **Consolidate Pagination** - Similar functions across templates could be unified
@@ -273,22 +307,31 @@ Template → backup_storage_material.html
 
 ## Conclusion
 
-The codebase is **well-structured** and **highly functional**. All functions serve specific purposes in the application flow. The recent additions (backup storage configuration management, global search, URL truncation, refresh functionality) integrate seamlessly with existing functionality. The new backup storage module expands the dashboard's capabilities to cover complete backup infrastructure monitoring.
+The codebase is **well-structured** and **highly functional**. All functions serve specific purposes in the application flow. The recent major additions (Status Dashboard with retry logic, separated backup storage tables, timestamp tracking, enhanced UI feedback) significantly expand the dashboard's monitoring and diagnostic capabilities.
 
 ### **Feature Completeness**
+- ✅ **Status Dashboard** - **NEW** - Real-time Ops Manager connectivity and authentication monitoring
 - ✅ **Backup Users Monitoring** - Complete with filtering and export
 - ✅ **Monitoring Users Management** - Full dashboard functionality  
-- ✅ **Backup Storage Configuration** - **NEW** - 4 storage types with complete management
+- ✅ **Backup Storage Configuration** - **ENHANCED** - 4 storage types with separated tables and individual management
 - ✅ **Concurrent API Processing** - 10-worker ThreadPool for optimal performance
 - ✅ **Smart Caching System** - Cache-first strategy with refresh capability
 - ✅ **Material Design UI** - Consistent, responsive interface across all pages
+- ✅ **Retry Logic & Error Handling** - **NEW** - 2-attempt connectivity checks with detailed feedback
 
 ### **Technical Excellence**
-- **API Integration**: MongoDB Ops Manager v7.0 compatible
-- **Performance**: Concurrent processing, smart caching, debounced search
-- **User Experience**: Global search, pagination, filtering, CSV export, refresh buttons
-- **Code Quality**: Modular design, proper error handling, comprehensive documentation
+- **API Integration**: MongoDB Ops Manager v7.0 compatible with enhanced connectivity testing
+- **Performance**: Concurrent processing, smart caching, debounced search, retry logic
+- **User Experience**: Status monitoring, global search, pagination, filtering, CSV export, timestamp tracking
+- **Code Quality**: Modular design, comprehensive error handling, detailed documentation
+- **Resilience**: Retry mechanisms, detailed error reporting, real-time status updates
+
+### **Architecture Improvements**
+- **File Structure**: Renamed `adminlte.py` → `app.py` following Flask best practices
+- **Route Organization**: Status Dashboard as primary route, legacy routes properly isolated
+- **UI Structure**: Separated backup storage functions into individual manageable sections
+- **Error Handling**: Enhanced retry logic with detailed attempt tracking and user feedback
 
 No functions should be removed as they all contribute to the application's core features and user experience.
 
-**Overall Status: ✅ PRODUCTION READY** (Enhanced with backup storage capabilities)
+**Overall Status: ✅ PRODUCTION READY** (Significantly enhanced with comprehensive monitoring and resilience features)

@@ -1,0 +1,487 @@
+{% extends "base_material.html" %}
+
+{% block title %}Ops Manager Status Dashboard{% endblock %}
+{% block page_title %}Ops Manager Status Dashboard{% endblock %}
+{% block page_subtitle %}Monitor connectivity and authentication status across all MongoDB Ops Manager instances{% endblock %}
+
+{% block page_actions %}
+<form method="post" style="display: inline;">
+  <input type="hidden" name="refresh" value="true">
+  <button type="submit" class="btn btn-primary" data-loading="true" title="Refresh all status checks">
+    <i class="ti ti-refresh me-1"></i>
+    Refresh Status
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+  <div class="page-body">
+    <div class="container-xl">
+      
+      <!-- Check Timestamp Display -->
+      {% if check_timestamp %}
+      <div class="row mb-3">
+        <div class="col-12">
+          <div class="card border-0 bg-light">
+            <div class="card-body py-3">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center text-muted">
+                  <div class="avatar avatar-sm bg-primary-lt me-2">
+                    <i class="ti ti-clock"></i>
+                  </div>
+                  <div>
+                    <div class="font-weight-medium text-dark">Status Check Information</div>
+                    <small>
+                      Last check: 
+                      <span id="check-timestamp" data-timestamp="{{ check_timestamp }}" class="fw-medium text-primary">
+                        {{ check_timestamp }}
+                      </span>
+                      <span id="relative-time" class="ms-2 badge"></span>
+                    </small>
+                  </div>
+                </div>
+                <div class="text-end">
+                  <div id="freshness-indicator" class="badge badge-outline">
+                    <i class="ti ti-circle-dot me-1"></i>
+                    <span id="freshness-text">Checking...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      
+      <!-- Summary Statistics -->
+      <div class="row mb-4">
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col-auto">
+                  <span class="bg-primary text-white avatar">
+                    <i class="ti ti-server"></i>
+                  </span>
+                </div>
+                <div class="col">
+                  <div class="font-weight-medium">
+                    Total Ops Managers
+                  </div>
+                  <div class="text-muted">
+                    {{ total_ops_managers }} instances
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col-auto">
+                  <span class="bg-success text-white avatar">
+                    <i class="ti ti-wifi"></i>
+                  </span>
+                </div>
+                <div class="col">
+                  <div class="font-weight-medium">
+                    Accessible
+                  </div>
+                  <div class="text-muted">
+                    {{ accessible_count }}/{{ total_ops_managers }} reachable
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col-auto">
+                  <span class="bg-warning text-white avatar">
+                    <i class="ti ti-key"></i>
+                  </span>
+                </div>
+                <div class="col">
+                  <div class="font-weight-medium">
+                    Authenticated
+                  </div>
+                  <div class="text-muted">
+                    {{ authenticated_count }}/{{ total_ops_managers }} API working
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col-auto">
+                  <span class="bg-info text-white avatar">
+                    <i class="ti ti-percentage"></i>
+                  </span>
+                </div>
+                <div class="col">
+                  <div class="font-weight-medium">
+                    Success Rate
+                  </div>
+                  <div class="text-muted">
+                    {{ "%.1f"|format((authenticated_count/total_ops_managers*100) if total_ops_managers > 0 else 0) }}% healthy
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Table -->
+      <div class="row">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <h3 class="card-title">
+                <i class="ti ti-list me-2"></i>
+                Ops Manager Status Details
+              </h3>
+              <div class="card-actions d-flex align-items-center">
+                <button type="button" class="btn btn-success btn-sm me-2" onclick="exportToCSV()" title="Export to CSV">
+                  <i class="ti ti-download"></i>
+                  Export CSV
+                </button>
+                <span class="badge bg-primary fs-6">
+                  {{ status_results|length }} instances
+                </span>
+              </div>
+            </div>
+            
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table" id="statusTable">
+                  <thead>
+                    <tr>
+                      <th>Region</th>
+                      <th>Environment</th>
+                      <th>Ops Manager</th>
+                      <th>Accessibility</th>
+                      <th>API Authentication</th>
+                      <th>Response Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for result in status_results %}
+                    <tr>
+                      <td>
+                        <span class="badge bg-secondary">{{ result.region }}</span>
+                      </td>
+                      <td>
+                        <span class="badge bg-{% if result.environment == 'Prod' %}primary{% else %}info{% endif %}">
+                          {{ result.environment }}
+                        </span>
+                      </td>
+                      <td>
+                        <div class="d-flex align-items-center">
+                          <div>
+                            <div class="font-weight-medium">{{ result.hostname }}</div>
+                            <div class="text-muted small">{{ result.url }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="d-flex flex-column">
+                          {% if result.accessibility.status == 'accessible' %}
+                            <span class="badge bg-success mb-1">
+                              <i class="ti ti-check me-1"></i>Accessible
+                              {% if result.accessibility.attempts and result.accessibility.attempts > 1 %}
+                                <small class="ms-1">({{ result.accessibility.attempts }} attempts)</small>
+                              {% endif %}
+                            </span>
+                          {% elif result.accessibility.status == 'timeout' %}
+                            <span class="badge bg-warning mb-1">
+                              <i class="ti ti-clock me-1"></i>Timeout
+                              {% if result.accessibility.attempts %}
+                                <small class="ms-1">({{ result.accessibility.attempts }} attempts)</small>
+                              {% endif %}
+                            </span>
+                          {% elif result.accessibility.status == 'unreachable' %}
+                            <span class="badge bg-danger mb-1">
+                              <i class="ti ti-x me-1"></i>Unreachable
+                              {% if result.accessibility.attempts %}
+                                <small class="ms-1">({{ result.accessibility.attempts }} attempts)</small>
+                              {% endif %}
+                            </span>
+                          {% else %}
+                            <span class="badge bg-secondary mb-1">
+                              <i class="ti ti-alert-triangle me-1"></i>Error
+                              {% if result.accessibility.attempts %}
+                                <small class="ms-1">({{ result.accessibility.attempts }} attempts)</small>
+                              {% endif %}
+                            </span>
+                          {% endif %}
+                          
+                          {% if result.accessibility.details %}
+                            <small class="text-muted" style="font-size: 0.7rem;">{{ result.accessibility.details }}</small>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td>
+                        {% if result.authentication.status == 'authenticated' %}
+                          <span class="badge bg-success">
+                            <i class="ti ti-shield-check me-1"></i>Authenticated
+                          </span>
+                        {% elif result.authentication.status == 'unauthorized' %}
+                          <span class="badge bg-danger">
+                            <i class="ti ti-shield-x me-1"></i>Unauthorized
+                          </span>
+                        {% elif result.authentication.status == 'timeout' %}
+                          <span class="badge bg-warning">
+                            <i class="ti ti-clock me-1"></i>API Timeout
+                          </span>
+                        {% elif result.authentication.status == 'not_checked' %}
+                          <span class="badge bg-secondary">
+                            <i class="ti ti-minus me-1"></i>Not Checked
+                          </span>
+                        {% else %}
+                          <span class="badge bg-secondary">
+                            <i class="ti ti-alert-triangle me-1"></i>Error
+                          </span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="text-muted">
+                          <small>
+                            <strong>Total:</strong> {{ "%.2f"|format(result.accessibility.response_time) }}s
+                            {% if result.accessibility.attempts %}
+                              <br><strong>Attempts:</strong> {{ result.accessibility.attempts }}
+                            {% endif %}
+                            {% if result.authentication.response_time > 0 %}
+                              <br><strong>API:</strong> {{ "%.2f"|format(result.authentication.response_time) }}s
+                            {% endif %}
+                            {% if result.accessibility.attempt_details %}
+                              <br>
+                              {% for attempt in result.accessibility.attempt_details %}
+                                <span class="badge badge-outline badge-sm">
+                                  #{{ attempt.attempt }}: {{ "%.1f"|format(attempt.response_time) }}s
+                                </span>
+                              {% endfor %}
+                            {% endif %}
+                          </small>
+                        </div>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Legend -->
+      <div class="row mt-3">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="ti ti-info-circle me-2"></i>
+                Status Legend
+              </h3>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-6">
+                  <h4 class="text-muted mb-3">Accessibility Status <small class="text-primary">(with Retry Logic)</small></h4>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2"><i class="ti ti-check"></i> Accessible</span>
+                    <span class="text-muted">Ops Manager is reachable and responding</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-warning me-2"><i class="ti ti-clock"></i> Timeout</span>
+                    <span class="text-muted">Both attempts timed out (5s + 3s timeouts)</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-danger me-2"><i class="ti ti-x"></i> Unreachable</span>
+                    <span class="text-muted">Connection failed on both attempts</span>
+                  </div>
+                  <div class="mt-3">
+                    <small class="text-info">
+                      <i class="ti ti-info-circle me-1"></i>
+                      <strong>Retry Logic:</strong> First attempt (5s timeout), then second attempt (3s timeout) if first fails.
+                    </small>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <h4 class="text-muted mb-3">Authentication Status</h4>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2"><i class="ti ti-shield-check"></i> Authenticated</span>
+                    <span class="text-muted">API credentials are valid and working</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-danger me-2"><i class="ti ti-shield-x"></i> Unauthorized</span>
+                    <span class="text-muted">API credentials are invalid or expired</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-secondary me-2"><i class="ti ti-minus"></i> Not Checked</span>
+                    <span class="text-muted">Skipped due to accessibility issues</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</div>
+
+<script>
+// CSV Export functionality
+function exportToCSV() {
+    const table = document.getElementById('statusTable');
+    const rows = table.querySelectorAll('tr');
+    const csvContent = [];
+    
+    // Header row
+    const headerCells = rows[0].querySelectorAll('th');
+    const headerRow = Array.from(headerCells).map(cell => `"${cell.textContent.trim()}"`);
+    csvContent.push(headerRow.join(','));
+    
+    // Data rows
+    for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i].querySelectorAll('td');
+        const rowData = [];
+        
+        for (let j = 0; j < cells.length; j++) {
+            let cellText = cells[j].textContent.trim();
+            // Clean up the text by removing extra whitespace
+            cellText = cellText.replace(/\s+/g, ' ');
+            rowData.push(`"${cellText}"`);
+        }
+        csvContent.push(rowData.join(','));
+    }
+    
+    // Create and download CSV
+    const csvString = csvContent.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ops_manager_status_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Timestamp formatting and relative time functions
+function convertTimestampToLocal() {
+    const timestampElement = document.getElementById('check-timestamp');
+    if (timestampElement) {
+        const timestamp = timestampElement.getAttribute('data-timestamp');
+        if (timestamp) {
+            const date = new Date(timestamp);
+            timestampElement.textContent = date.toLocaleString();
+            updateRelativeTime();
+        }
+    }
+}
+
+function getRelativeTime(timestamp) {
+    const now = new Date();
+    const checkTime = new Date(timestamp);
+    const diffMs = now - checkTime;
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMinutes < 1) {
+        return "just now";
+    } else if (diffMinutes < 60) {
+        return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+    } else if (diffHours < 24) {
+        return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    } else {
+        return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    }
+}
+
+function updateRelativeTime() {
+    const timestampElement = document.getElementById('check-timestamp');
+    const relativeTimeElement = document.getElementById('relative-time');
+    const freshnessIndicator = document.getElementById('freshness-indicator');
+    const freshnessText = document.getElementById('freshness-text');
+    
+    if (timestampElement && relativeTimeElement) {
+        const timestamp = timestampElement.getAttribute('data-timestamp');
+        if (timestamp) {
+            const relativeText = getRelativeTime(timestamp);
+            relativeTimeElement.textContent = relativeText;
+            
+            // Calculate age in minutes
+            const now = new Date();
+            const checkTime = new Date(timestamp);
+            const diffMinutes = Math.floor((now - checkTime) / 60000);
+            
+            // Remove existing classes
+            relativeTimeElement.classList.remove('bg-success', 'bg-warning', 'bg-danger');
+            if (freshnessIndicator) {
+                freshnessIndicator.classList.remove('text-success', 'text-warning', 'text-danger');
+            }
+            
+            // Apply styling based on data age
+            if (diffMinutes < 2) {
+                // Fresh (0-2 minutes) - Green
+                relativeTimeElement.classList.add('bg-success');
+                if (freshnessIndicator) {
+                    freshnessIndicator.classList.add('text-success');
+                    freshnessText.textContent = 'Fresh';
+                }
+            } else if (diffMinutes < 5) {
+                // Moderate (2-5 minutes) - Yellow
+                relativeTimeElement.classList.add('bg-warning');
+                if (freshnessIndicator) {
+                    freshnessIndicator.classList.add('text-warning');
+                    freshnessText.textContent = 'Moderate';
+                }
+            } else {
+                // Stale (5+ minutes) - Red
+                relativeTimeElement.classList.add('bg-danger');
+                if (freshnessIndicator) {
+                    freshnessIndicator.classList.add('text-danger');
+                    freshnessText.textContent = 'Stale';
+                }
+            }
+        }
+    }
+}
+
+// Update relative time every 30 seconds
+function startTimestampUpdates() {
+    updateRelativeTime();
+    setInterval(updateRelativeTime, 30000); // Update every 30 seconds
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    convertTimestampToLocal();
+    startTimestampUpdates();
+});
+
+// Auto-refresh functionality (optional)
+{% if refresh_requested %}
+console.log('Status refresh completed');
+{% endif %}
+</script>
+{% endblock %}
