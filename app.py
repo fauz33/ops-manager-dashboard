@@ -450,15 +450,57 @@ def check_api_authentication(url, public_key, private_key):
     except Exception as e:
         return {'status': 'error', 'response_time': 0.0, 'error': str(e)}
 
+def get_ops_manager_version(url):
+    """
+    Retrieve the MongoDB Ops Manager version from the version manifest endpoint.
+    
+    Args:
+        url: The Ops Manager URL
+        
+    Returns:
+        str: Version string or 'Unknown' if retrieval fails
+    """
+    try:
+        # Use the unauth version manifest endpoint
+        version_url = f"{url}/api/public/v1.0/unauth/versionManifest"
+        
+        response = requests.get(
+            version_url,
+            headers={"Accept": "application/json"},
+            timeout=10,
+            verify=False
+        )
+        
+        # Extract version from X-MongoDB-Service-Version header
+        version_header = response.headers.get('X-MongoDB-Service-Version', '')
+        
+        if 'versionString=' in version_header:
+            # Parse: "gitHash=abc123; versionString=7.0.1.123456789"
+            parts = version_header.split(';')
+            for part in parts:
+                part = part.strip()
+                if part.startswith('versionString='):
+                    version = part.split('=', 1)[1]
+                    return version if version else 'Unknown'
+        
+        return 'Unknown'
+        
+    except requests.exceptions.Timeout:
+        return 'Unknown'
+    except requests.exceptions.ConnectionError:
+        return 'Unknown'
+    except Exception as e:
+        return 'Unknown'
+
 def check_ops_manager_status(ops_manager):
     """
-    Check both accessibility and authentication for a single Ops Manager.
+    Check accessibility, authentication, and version for a single Ops Manager.
     
     Args:
         ops_manager: Dict containing url, public_key, private_key, region, environment
         
     Returns:
-        dict: Combined status information
+        dict: Combined status information including version
     """
     url = ops_manager['url']
     public_key = ops_manager['public_key']
@@ -470,8 +512,11 @@ def check_ops_manager_status(ops_manager):
     # Check authentication only if accessible
     if accessibility_result['status'] == 'accessible':
         auth_result = check_api_authentication(url, public_key, private_key)
+        # Also get version if accessible
+        version = get_ops_manager_version(url)
     else:
         auth_result = {'status': 'not_checked', 'response_time': 0.0}
+        version = 'Unknown'
     
     return {
         'url': url,
@@ -479,7 +524,8 @@ def check_ops_manager_status(ops_manager):
         'region': ops_manager['region'],
         'environment': ops_manager['environment'],
         'accessibility': accessibility_result,
-        'authentication': auth_result
+        'authentication': auth_result,
+        'version': version
     }
 
 @app.route('/', methods=['GET', 'POST'])
@@ -1010,7 +1056,7 @@ def backup_storage_page():
                 status_message = f"Data retrieval completed! Fetched {total_fetched} backup storage configurations from API (cache was missing)."
                 status_type = "success"
     
-    # Separate data by storage type
+    # Separate data by storage type AND extract unique values from the filtered data
     snapshot_blockstore_data = []
     snapshot_s3_data = []
     oplog_store_data = []
