@@ -23,56 +23,25 @@ from get_backup_storage import gather_backup_storage_for_credentials
 app = Flask(__name__)
 
 def truncate_ops_manager_url(url, max_length=35):
-    """Smart truncation for Ops Manager URLs to fit in filter UI"""
+    """Truncate URLs from the end, keeping the beginning visible"""
     if len(url) <= max_length:
         return url
     
-    # Handle different URL patterns
-    if '.' not in url:
-        # IP addresses or simple hostnames
-        return url
+    # Remove protocol if present for cleaner display
+    display_url = url.replace('https://', '').replace('http://', '')
     
-    parts = url.split('.')
-    
-    # AWS ELB/NLB pattern
-    if 'elb.amazonaws.com' in url or 'amazonaws.com' in url:
-        # Extract service identifier and region
-        service_parts = parts[0].split('-')
-        service_id = '-'.join(service_parts[:3]) if len(service_parts) >= 3 else parts[0]
-        # Find region part
-        region_part = next((part for part in parts if 'us-' in part or 'eu-' in part), parts[-3])
-        return f"...{service_id}...{region_part}.amazonaws.com"
-    
-    # Corporate domain pattern (opsmanager.region.env.company.com)
-    if len(parts) >= 4:
-        # Keep environment and company parts
-        important_parts = []
-        for part in parts[1:]:  # Skip first part (usually 'opsmanager')
-            if any(env in part for env in ['prod', 'dev', 'staging', 'test', 'non-prod']):
-                important_parts.append(part)
-            elif any(region in part for region in ['us-east', 'us-west', 'eu-', 'ap-']):
-                important_parts.append(part)
-        
-        # Keep last 2 parts (company.com) and important middle parts
-        if important_parts:
-            result = f"...{'.'.join(important_parts)}.{parts[-2]}.{parts[-1]}"
+    # Handle port separately
+    if ':' in display_url:
+        base_url, port = display_url.rsplit(':', 1)
+        if len(base_url) + len(port) + 4 <= max_length:  # +4 for "...:"
+            truncated = base_url[:max_length-len(port)-4] + "..."
+            return f"{truncated}:{port}"
         else:
-            result = f"...{parts[-3]}.{parts[-2]}.{parts[-1]}"
-        
-        # Add port if present
-        if ':' in url:
-            port = url.split(':')[-1]
-            result += f":{port}"
-        
-        return result
+            # If even with port it's too long, truncate the whole thing
+            return display_url[:max_length-3] + "..."
     
-    # Default: show end of URL with ellipsis
-    if ':' in url:
-        base_url, port = url.rsplit(':', 1)
-        truncated_base = "..." + base_url[-(max_length-len(port)-4):]
-        return f"{truncated_base}:{port}"
-    
-    return "..." + url[-(max_length-3):]
+    # Simple truncation from end, keeping the beginning
+    return display_url[:max_length-3] + "..."
 
 @app.template_filter('truncate_url')
 def truncate_url_filter(url):

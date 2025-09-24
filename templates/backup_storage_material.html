@@ -110,151 +110,8 @@
         </div>
       </div>
 
-      <!-- Region/Environment Filters -->
+      <!-- Tables and Filters Row -->
       <div class="row">
-        <div class="col-lg-3">
-          <div class="card">
-            <div class="card-header">
-              <h3 class="card-title">
-                <i class="ti ti-filter me-2"></i>
-                Filters
-              </h3>
-            </div>
-            <div class="card-body">
-              <form method="post" id="filterForm">
-                <!-- Region Filter -->
-                <div class="mb-3">
-                  <label class="form-label">Regions</label>
-                  <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column">
-                    {% for region in unique_region %}
-                    <label class="form-selectgroup-item flex-fill">
-                      <input type="checkbox" name="regions" value="{{ region }}" class="form-selectgroup-input"
-                             {% if region in selected_regions %}checked{% endif %}>
-                      <div class="form-selectgroup-label">{{ region }}</div>
-                    </label>
-                    {% endfor %}
-                  </div>
-                </div>
-                
-                <!-- Environment Filter -->
-                <div class="mb-3">
-                  <label class="form-label">Environments</label>
-                  <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column">
-                    {% for env in unique_env %}
-                    <label class="form-selectgroup-item flex-fill">
-                      <input type="checkbox" name="environments" value="{{ env }}" class="form-selectgroup-input"
-                             {% if env in selected_environments %}checked{% endif %}>
-                      <div class="form-selectgroup-label">{{ env }}</div>
-                    </label>
-                    {% endfor %}
-                  </div>
-                </div>
-                
-                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
-              </form>
-              
-              <!-- Table Filters -->
-              {% if unique_storage_types or unique_opsmanagers %}
-              <hr>
-              <div class="mb-3">
-                <h4 class="subheader mb-3">Table Filters</h4>
-                
-                {% if unique_storage_types %}
-                <div class="mb-3">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="form-label mb-0">
-                      <i class="ti ti-database me-1"></i>
-                      Storage Type <span class="badge bg-secondary ms-1">{{ unique_storage_types|length }}</span>
-                    </label>
-                    <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('storagetype')">
-                      <i class="ti ti-chevron-down" id="storagetype-chevron"></i>
-                    </button>
-                  </div>
-                  
-                  <div id="storagetype-filter-group" class="collapse show">
-                    <!-- Select All/None for Storage Type -->
-                    <div class="mb-2 d-flex gap-1">
-                      <button type="button" class="btn btn-sm btn-outline-secondary" 
-                              onclick="selectAllFilters('.storagetype-filter', true)">
-                        <i class="ti ti-check-all"></i> All
-                      </button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" 
-                              onclick="selectAllFilters('.storagetype-filter', false)">
-                        <i class="ti ti-x"></i> None
-                      </button>
-                    </div>
-                    
-                    <!-- Storage Type Filter Items -->
-                    <div class="storagetype-filter-items" style="max-height: 200px; overflow-y: auto;">
-                      {% for storage_type in unique_storage_types %}
-                      <div class="storagetype-filter-item">
-                        <div class="form-check form-check-sm mb-1">
-                          <input class="form-check-input storagetype-filter" type="checkbox" 
-                                id="storagetypeFilter{{ loop.index }}" 
-                                value="{{ storage_type }}"
-                                onchange="filterTables()">
-                          <label class="form-check-label" for="storagetypeFilter{{ loop.index }}">
-                            {{ storage_type.replace('_', ' ').title() }}
-                          </label>
-                        </div>
-                      </div>
-                      {% endfor %}
-                    </div>
-                  </div>
-                </div>
-                {% endif %}
-                
-                {% if unique_opsmanagers %}
-                <div class="mb-3">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <label class="form-label mb-0">
-                      <i class="ti ti-server me-1"></i>
-                      Ops Manager <span class="badge bg-secondary ms-1">{{ unique_opsmanagers|length }}</span>
-                    </label>
-                    <button type="button" class="btn btn-sm btn-ghost-secondary" onclick="toggleFilterGroup('opsmanager')">
-                      <i class="ti ti-chevron-down" id="opsmanager-chevron"></i>
-                    </button>
-                  </div>
-                  
-                  <div id="opsmanager-filter-group" class="collapse show">
-                    <!-- Select All/None for Ops Manager -->
-                    <div class="mb-2 d-flex gap-1">
-                      <button type="button" class="btn btn-sm btn-outline-secondary" 
-                              onclick="selectAllFilters('.opsmanager-filter', true)">
-                        <i class="ti ti-check-all"></i> All
-                      </button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" 
-                              onclick="selectAllFilters('.opsmanager-filter', false)">
-                        <i class="ti ti-x"></i> None
-                      </button>
-                    </div>
-                    
-                    <!-- Ops Manager Filter Items -->
-                    <div class="opsmanager-filter-items" style="max-height: 200px; overflow-y: auto;">
-                      {% for opsmanager in unique_opsmanagers %}
-                      <div class="opsmanager-filter-item">
-                        <div class="form-check form-check-sm mb-1">
-                          <input class="form-check-input opsmanager-filter" type="checkbox" 
-                                id="opsmanagerFilter{{ loop.index }}" 
-                                value="{{ opsmanager }}"
-                                onchange="filterTables()">
-                          <label class="form-check-label" for="opsmanagerFilter{{ loop.index }}">
-                            {{ opsmanager }}
-                          </label>
-                        </div>
-                      </div>
-                      {% endfor %}
-                    </div>
-                  </div>
-                </div>
-                {% endif %}
-              </div>
-              {% endif %}
-              
-            </div>
-          </div>
-        </div>
-
         <!-- Tables Section -->
         <div class="col-lg-9">
           
@@ -499,6 +356,72 @@
           </div>
 
         </div>
+        
+        <!-- Sidebar Filters -->
+        <div class="col-lg-3">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="ti ti-filter me-2"></i>
+                Filters
+              </h3>
+            </div>
+            <div class="card-body">
+              <form method="POST" action="/backup-storage" id="filterForm">
+                <!-- Data Source Selection -->
+                <div class="mb-4">
+                  <h4 class="subheader mb-3">Data Source</h4>
+                  
+                  <div class="row">
+                    <!-- Regions -->
+                    <div class="col-12 mb-3">
+                      <label class="form-label fw-semibold">
+                        <i class="ti ti-world-pin me-1"></i>
+                        Regions
+                      </label>
+                      {% for region in unique_region %}
+                      <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" 
+                              id="regionCheckbox{{ loop.index }}" 
+                              name="regions"
+                              value="{{ region }}" 
+                              {% if region in selected_regions %}checked{% endif %}
+                              onchange="this.form.submit()">
+                        <label class="form-check-label" for="regionCheckbox{{ loop.index }}">
+                          {{ region.title() }}
+                        </label>
+                      </div>
+                      {% endfor %}
+                    </div>
+                    
+                    <!-- Environments -->
+                    <div class="col-12">
+                      <label class="form-label fw-semibold">
+                        <i class="ti ti-settings me-1"></i>
+                        Environments
+                      </label>
+                      {% for env in unique_env %}
+                      <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" 
+                              id="envCheckbox{{ loop.index }}" 
+                              name="environments"
+                              value="{{ env }}" 
+                              {% if env in selected_environments %}checked{% endif %}
+                              onchange="this.form.submit()">
+                        <label class="form-check-label" for="envCheckbox{{ loop.index }}">
+                          {{ env.title() }}
+                        </label>
+                      </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                
+                
+              </form>
+            </div>
+          </div>
+        </div>
       </div>
       
       <!-- Cache Information -->
@@ -587,93 +510,10 @@ function convertTimestampToLocal() {
   }
 }
 
-// Filter functionality
-function toggleFilterGroup(groupName) {
-  const group = document.getElementById(groupName + '-filter-group');
-  const chevron = document.getElementById(groupName + '-chevron');
-  
-  if (group.classList.contains('show')) {
-    group.classList.remove('show');
-    chevron.classList.remove('ti-chevron-up');
-    chevron.classList.add('ti-chevron-down');
-  } else {
-    group.classList.add('show');
-    chevron.classList.remove('ti-chevron-down');
-    chevron.classList.add('ti-chevron-up');
-  }
-}
-
-function selectAllFilters(checkboxSelector, selectAll) {
-  const checkboxes = document.querySelectorAll(checkboxSelector);
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = selectAll;
-  });
-  filterTables();
-}
-
-function filterTables() {
-  // Get selected storage types
-  const storageTypeFilters = Array.from(document.querySelectorAll('.storagetype-filter:checked')).map(cb => cb.value);
-  const opsManagerFilters = Array.from(document.querySelectorAll('.opsmanager-filter:checked')).map(cb => cb.value);
-  
-  // Filter each table
-  filterTable('snapshot-blockstore-table', storageTypeFilters, opsManagerFilters, 'snapshot_blockstore');
-  filterTable('snapshot-s3-table', storageTypeFilters, opsManagerFilters, 'snapshot_s3');
-  filterTable('oplog-store-table', storageTypeFilters, opsManagerFilters, 'oplog_store');
-  filterTable('oplog-s3-table', storageTypeFilters, opsManagerFilters, 'oplog_s3');
-}
-
-function filterTable(tableId, storageTypeFilters, opsManagerFilters, tableStorageType) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
-  
-  const rows = table.querySelectorAll('tbody tr');
-  let visibleCount = 0;
-  
-  rows.forEach(row => {
-    let showRow = true;
-    
-    // Check storage type filter
-    if (storageTypeFilters.length > 0) {
-      showRow = showRow && storageTypeFilters.includes(tableStorageType);
-    }
-    
-    // Check ops manager filter
-    if (opsManagerFilters.length > 0 && showRow) {
-      const opsManagerCell = row.cells[3]; // Ops Manager is typically 4th column (index 3)
-      const opsManagerText = opsManagerCell ? opsManagerCell.textContent.trim() : '';
-      showRow = showRow && opsManagerFilters.some(filter => opsManagerText.includes(filter));
-    }
-    
-    if (showRow) {
-      row.style.display = '';
-      visibleCount++;
-    } else {
-      row.style.display = 'none';
-    }
-  });
-  
-  // Update badge count in the card header
-  const section = document.getElementById(tableId.replace('-table', '-section'));
-  if (section) {
-    const badge = section.querySelector('.badge');
-    if (badge) {
-      const totalCount = badge.textContent.match(/\d+/);
-      if (totalCount) {
-        badge.textContent = `${visibleCount} of ${totalCount[0]} configs`;
-        badge.className = visibleCount > 0 ? 'badge bg-primary fs-6' : 'badge bg-secondary fs-6';
-      }
-    }
-  }
-}
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
   convertTimestampToLocal();
-  
-  // Initialize all table filters to show all items
-  selectAllFilters('.storagetype-filter', true);
-  selectAllFilters('.opsmanager-filter', true);
 });
 </script>
 {% endblock %}
