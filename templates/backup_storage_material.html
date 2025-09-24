@@ -33,6 +33,25 @@
   </div>
   {% endif %}
 
+<!-- Cache Info -->
+{% if selected_regions or selected_environments %}
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="alert alert-info d-flex align-items-center">
+      <i class="ti ti-clock me-2"></i>
+      <div>
+        <strong>Last Data Refresh:</strong> 
+        {% if cache_timestamp %}
+          <span id="cache-timestamp" data-utc="{{ cache_timestamp }}">{{ cache_timestamp[:19].replace('T', ' ') }} UTC</span>
+        {% else %}
+          No cached data available
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
   <div class="page-body">
     <div class="container-xl">
       <!-- Summary Statistics -->
