@@ -96,7 +96,7 @@ def create_project_dataframe(all_clusters_data, domain_url=None):
                 'Replica Set Name': rs_name,
                 'Ops Manager': ops_manager_domain,
                 'Username': backup_info['username'],
-                'Last Heartbeat': last_heartbeat,
+                'Last Ping': last_heartbeat,
                 'Backup Status': backup_info['backup_status']
             })
     return pd.DataFrame(rows)
