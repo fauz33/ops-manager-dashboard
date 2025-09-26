@@ -143,7 +143,6 @@
                 <th><i class="ti ti-server me-1"></i>Ops Manager</th>
                 <th><i class="ti ti-building me-1"></i>Project</th>
                 <th><i class="ti ti-copy me-1"></i>Replica Set</th>
-                <th><i class="ti ti-world me-1"></i>Hostname:Port</th>
                 <th><i class="ti ti-user me-1"></i>Username</th>
                 <th><i class="ti ti-clock me-1"></i>Last Ping</th>
                 <th><i class="ti ti-shield me-1"></i>Backup Status</th>
@@ -159,10 +158,11 @@
                   <strong>{{ item.get('Project', 'N/A') }}</strong>
                 </td>
                 <td>
-                  <code class="text-primary">{{ item.get('Replica Set Name', 'N/A') }}</code>
-                </td>
-                <td>
-                  <span class="font-monospace text-info">{{ item.get('Hostname:Port', 'N/A') }}</span>
+                  <div class="d-flex align-items-center">
+                    {% set last_ping = item.get('Last Ping', '') or item.get('Last Heartbeat', '') or '' %}
+                    <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
+                    <code class="text-primary">{{ item.get('Replica Set Name', 'N/A') }}</code>
+                  </div>
                 </td>
                 <td>
                   {% set username = item.get('Username') %}
@@ -174,7 +174,7 @@
                 </td>
                 <td>
                   <div class="d-flex align-items-center">
-                    {% set last_ping = item.get('Last Ping', '') or '' %}
+                    {% set last_ping = item.get('Last Ping', '') or item.get('Last Heartbeat', '') or '' %}
                     <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
                     <span class="{% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}text-success{% elif 'hour' in last_ping %}text-warning{% else %}text-danger{% endif %}">
                       {{ last_ping or 'Unknown' }}
@@ -648,14 +648,14 @@ function filterTable() {
     
     // Username filter
     if (selectedUsernames.length > 0) {
-      const usernameCell = cells[4]; // Username column  
+      const usernameCell = cells[3]; // Username column  
       const usernameText = usernameCell ? usernameCell.textContent.toLowerCase().trim() : '';
       showRow = showRow && selectedUsernames.some(filter => usernameText.includes(filter));
     }
     
     // Status filter
     if (selectedStatuses.length > 0) {
-      const statusCell = cells[6]; // Backup Status column
+      const statusCell = cells[5]; // Backup Status column
       const statusText = statusCell ? statusCell.textContent.toLowerCase().trim() : '';
       showRow = showRow && selectedStatuses.some(filter => statusText.includes(filter));
     }

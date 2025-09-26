@@ -153,17 +153,17 @@
                   <span class="text-muted">{{ item.get('Ops Manager', 'N/A') }}</span>
                 </td>
                 <td>
-                  <div class="d-flex align-items-center">
-                    {% set last_ping = item.get('Last Ping', '') or '' %}
-                    <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
-                    <strong>{{ item.get('Project', 'N/A') }}</strong>
-                  </div>
+                  <strong>{{ item.get('Project', 'N/A') }}</strong>
                 </td>
                 <td>
                   <code class="text-primary">{{ item.get('Replica Set Name', 'N/A') }}</code>
                 </td>
                 <td>
-                  <span class="font-monospace text-info">{{ item.get('Hostname:Port', 'N/A') }}</span>
+                  <div class="d-flex align-items-center">
+                    {% set last_ping = item.get('Last Ping', '') or '' %}
+                    <span class="status-indicator {% if last_ping.endswith('seconds') or last_ping.endswith('minute') %}status-online{% elif 'hour' in last_ping %}status-warning{% else %}status-offline{% endif %}"></span>
+                    <span class="font-monospace text-info">{{ item.get('Hostname:Port', 'N/A') }}</span>
+                  </div>
                 </td>
                 <td>
                   {% set username = item.get('Username') %}
